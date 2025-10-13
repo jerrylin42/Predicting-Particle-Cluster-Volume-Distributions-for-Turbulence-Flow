@@ -4,9 +4,26 @@ author: "FILL"
 output: pdf_document
 ---
 
+#DELETE LATER
+
+-   understand data, what to do with "inf"
+
+-   calculate 4 new cols, one for each metric we predict (mean, sd, skew, kurt)
+
+-   for each of the 4 categories (but apply same method across alll 4): MUST DECIDE METHOD: which model do we start with (full interactions?)? How do we evaluate the best model selection methods (BIC/AIC, ANOVA, CV, subset/fwd/bwd selection....)? How do we select what type of model to use (OLS, ridge, lasso)? ———hardest part (bc code should be straightforward)
+
+-   run models through testing data
+
+-   finalize all 4 models, and interpret coefficients (results) -\>provide insights into broader research question in conclusion
+
 # Introduction
 
 # Methods
+
+```{r}
+training_data <- read.csv("data-train.csv")
+training_data
+```
 
 # Results
 
