@@ -9,4 +9,4 @@ acceleration Fr, and particle characteristic St.
 The raw response variable (obtained from numerical simulation and
 cluster analysis) is a probability distribution for particle cluster volumes. Since probability
 distributions are hard to work with, collaborators instead summarized these distributions
-by their first four raw moments (i.e., E[X], E[X2], E[X3], E[X4]),
+by their first four raw moments.
