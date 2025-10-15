@@ -1,0 +1,118 @@
+---
+title: "Converting Raw Moments to Central Moments"
+author: "Particle Clustering Proj Group"
+date: "`10/15/2025`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Goal
+
+Raw moments $E[X]$, $E[X^2]$, $E[X^3]$, $E[X^4]$ to interpretable summary statistics:
+
+- **Mean**: $\mu = E[X]$
+- **Variance**: $\sigma^2 = E[X^2] - \mu^2$
+- **Skewness**: $\gamma = E[(X - \mu)^3] / \sigma^3$
+- **Kurtosis**: $\kappa = E[(X - \mu)^4] / \sigma^4$
+
+## Load Data
+
+```{r}
+library(tidyverse)
+
+train_data <- read_csv("data-train.csv")
+
+head(train_data)
+```
+
+## Calculate Summary Statistics
+
+### Formulas
+
+For a random variable X with raw moments $m_1 = E[X]$, $m_2 = E[X^2]$, $m_3 = E[X^3]$, $m_4 = E[X^4]$:
+
+**Variance:**
+$$\sigma^2 = E[X^2] - \mu^2$$
+
+**Third Central Moment:**
+$$E[(X - \mu)^3] = E[X^3] - 3\mu E[X^2] + 2\mu^3$$
+
+**Skewness:**
+$$\gamma = \frac{E[(X - \mu)^3]}{\sigma^3}$$
+
+**Fourth Central Moment:**
+$$E[(X - \mu)^4] = E[X^4] - 4\mu E[X^3] + 6\mu^2 E[X^2] - 3\mu^4$$
+
+**Kurtosis:**
+$$\kappa = \frac{E[(X - \mu)^4]}{\sigma^4}$$
+
+### Calculation
+
+```{r}
+train_with_stats <- train_data %>%
+  mutate(
+    # Mean (first raw moment)
+    mean = R_moment_1,
+    
+    # Variance (second central moment)
+    variance = R_moment_2 - R_moment_1^2,
+    sd = sqrt(variance),
+    
+    # Third central moment
+    mu3 = R_moment_3 - 3*R_moment_1*R_moment_2 + 2*R_moment_1^3,
+    
+    # Skewness (standardized third central moment)
+    skewness = mu3 / (sd^3),
+    
+    # Fourth central moment
+    mu4 = R_moment_4 - 4*R_moment_1*R_moment_3 + 
+          6*R_moment_1^2*R_moment_2 - 3*R_moment_1^4,
+    
+    # Kurtosis (standardized fourth central moment)
+    kurtosis = mu4 / (sd^4)
+  ) %>%
+  # Clean p
+  select(-mu3, -mu4)
+```
+
+## Example Calculation
+
+First row of training data:
+
+```{r}
+# Raw moments
+cat("Raw moments:\n")
+cat("  E[X]    =", train_data$R_moment_1[1], "\n")
+cat("  E[X^2]  =", train_data$R_moment_2[1], "\n")
+cat("  E[X^3]  =", train_data$R_moment_3[1], "\n")
+cat("  E[X^4]  =", train_data$R_moment_4[1], "\n\n")
+
+# Calculated stats
+cat("Calculated statistics:\n")
+cat("  Mean:      ", train_with_stats$mean[1], "\n")
+cat("  Variance:  ", train_with_stats$variance[1], "\n")
+cat("  Std Dev:   ", train_with_stats$sd[1], "\n")
+cat("  Skewness:  ", train_with_stats$skewness[1], "\n")
+cat("  Kurtosis:  ", train_with_stats$kurtosis[1], "\n")
+```
+
+## Summary of Measures
+
+```{r}
+train_with_stats %>%
+  select(mean, variance, skewness, kurtosis) %>%
+  summary()
+```
+
+## Save
+
+```{r}
+write_csv(train_with_stats, "data-train-processed.csv")
+cat("Saved: data-train-processed.csv\n")
+```
+
+Should have og + new cols: `mean`, `variance`, `sd`, `skewness`, `kurtosis`.
+
