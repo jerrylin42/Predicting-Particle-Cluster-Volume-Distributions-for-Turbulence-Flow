@@ -23,8 +23,17 @@ output: pdf_document
 # Methods
 
 ```{r}
-training_data <- read.csv("data-train.csv")
+training_data <- read.csv("data-train-processed.csv")
 training_data
+```
+
+```{r linear reg}
+
+linear_model <- lm(mean ~ St + Re + Fr, data = training_data)
+
+summary(linear_model)
+
+#yeah idk about the inf values
 ```
 
 # Results
