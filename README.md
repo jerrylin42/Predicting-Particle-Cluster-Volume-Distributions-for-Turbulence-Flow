@@ -10,3 +10,10 @@ The raw response variable (obtained from numerical simulation and
 cluster analysis) is a probability distribution for particle cluster volumes. Since probability
 distributions are hard to work with, collaborators instead summarized these distributions
 by their first four raw moments.
+
+We want to explore how fluid turbulence (quantified by 
+Reynolds number or Re), gravitational acceleration (quantified by Froud
+number or F r) and particles’ characteristics (e.g. size, density which is
+quantified by Stokes number or St) affect the spatial distribution and
+clustering of particles in an idealized turbulence (homogeneous isotropic
+turbulence or HIT).
