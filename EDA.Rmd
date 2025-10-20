@@ -64,7 +64,7 @@ Observations: mean performs well as just a base model. The rest are subpar to ok
 
 ### Recommendations for workflow:
 
-\
+
 For EACH model:
 
 Start with full model, including all variables with log-transformations and their interaction effects

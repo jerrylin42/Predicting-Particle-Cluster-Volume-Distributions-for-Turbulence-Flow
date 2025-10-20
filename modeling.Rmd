@@ -145,6 +145,7 @@ lm_mean_full <- lm(formula_mean_full, data = train)
 cat("Full model R²:", summary(lm_mean_full)$r.squared, "\n")
 cat("Full model variables:", length(coef(lm_mean_full)) - 1)
 ```
+A full multiple linear regression model was fitted to predict log_mean using the three predictors (log_St, Re, and Fr_invlogit) and all pairwise interaction terms. The resulting model achieved an $R^2$ of 99.75% with 9 model variables, indicating an excellent fit to the training data and suggesting that the predictors capture almost all variation in the mean cluster volume. The inclusion of interaction terms is physically meaningful, as particle inertia effects may depend on turbulence and gravity. However, such a high $R^2$ could suggest overfitting, so subsequent steps will use cross-validation and subset selection to ensure generalizability.
 
 ## 2.2 Best Subset Selection
 
@@ -167,6 +168,9 @@ cat("Best model has", length(best_vars), "variables (", best_size, "including du
 cat("Variables:", paste(best_vars, collapse = ", "))
 ```
 
+Best subset selection identified a 6-variable model as optimal based on the BIC score, achieving an adjusted $R^2$ of 99.71%, which is nearly identical to the full model’s performance but with fewer terms. This indicates that some interaction terms are unnecessary and that the simplified model provides a better balance between accuracy and interpretability, reducing the risk of overfitting.
+
+
 ## 2.3 Build Best Model Formula
 
 ```{r mean_formula}
@@ -175,6 +179,8 @@ formula_mean_best <- as.formula(paste("log_mean ~", paste(best_vars, collapse = 
 cat("best model formula:\n")
 print(formula_mean_best)
 ```
+
+The 6 variables reported by best subset selection include dummy variables automatically created for the categorical predictor `Re`. Once these are collapsed back into the original factor, the final model consists of 4 unique predictors (`log_St`, `Re`, `Fr_invlogit`, and `Re:Fr_invlogit`).
 
 ## 2.4 Compare OLS vs Ridge
 
@@ -206,7 +212,7 @@ if(cv_ols_mean < cv_ridge_mean) {
   use_ridge_mean <- TRUE
 }
 ```
-
+Comparing OLS and ridge regression showed that OLS achieved a lower cross-validated RMSE (~0.125) than ridge (~0.366), indicating better predictive performance and no evidence of overfitting in the simpler best-subset model. Ridge regularization did not improve results, likely because the model is already low in complexity and multicollinearity is minimal.
 ---
 
 # 3. Model 2: VARIANCE
@@ -452,6 +458,8 @@ plot(lm_skew_best, which = 1, main = "Skewness: Residuals vs Fitted")
 plot(lm_kurt_best, which = 1, main = "Kurtosis: Residuals vs Fitted")
 ```
 
+The residual plot shows that the mean model satisfies key assumptions: residuals are centered around zero with no strong patterns, indicating a good linear fit. In contrast, the residual plots for variance, skewness, and kurtosis show clear curvature and changing spread, suggesting nonlinear relationships and heteroskedasticity. These patterns indicate that the current linear models may be misspecified and that additional transformations or nonlinear modeling approaches may be needed to improve performance for higher-order distribution statistics.
+
 ## 6.2 Q-Q Plots
 
 ```{r diagnostics_qq, fig.height=8, fig.width=10}
@@ -462,7 +470,8 @@ plot(lm_var_best, which = 2, main = "Variance: Q-Q Plot")
 plot(lm_skew_best, which = 2, main = "Skewness: Q-Q Plot")
 plot(lm_kurt_best, which = 2, main = "Kurtosis: Q-Q Plot")
 ```
-
+The Q–Q plot for the mean model shows residuals close to normal, indicating the linear regression assumptions are well met. In contrast, the variance, skewness, and kurtosis models show substantial departures from normality, particularly in the tails, suggesting that these models may require more complex approaches to better capture the data patterns at the tails. (Same analysis as with residual plots)
+ 
 ---
 
 # 7. Test Set Predictions
@@ -578,6 +587,25 @@ cat("Kurtosis model summary")
 summary(lm_kurt_best)
 ```
 
+# 8.5 Cross-Validation RMSE Comparison
+
+To compare predictive performance across all four models, we summarize the 10-fold CV RMSE below:
+
+```{r cv_summary}
+cv_results <- data.frame(
+  Response = c("Mean", "Variance", "Skewness", "Kurtosis"),
+  OLS_CV_RMSE = c(cv_ols_mean, cv_ols_var, cv_ols_skew, cv_ols_kurt),
+  Ridge_CV_RMSE = c(cv_ridge_mean, cv_ridge_var, cv_ridge_skew, cv_ridge_kurt)
+)
+
+cv_results %>%
+  mutate(
+    Best_Method = ifelse(OLS_CV_RMSE < Ridge_CV_RMSE, "OLS", "Ridge"),
+    Best_RMSE = pmin(OLS_CV_RMSE, Ridge_CV_RMSE)
+  ) %>%
+  arrange(Best_RMSE)
+```
+
 ---
 
 # 9. Key Findings
@@ -587,7 +615,7 @@ summary(lm_kurt_best)
 - Best subset selection reduced variable count from full model
 - OLS vs Ridge comparison determined final estimation method
 
-**What I thikn we should do next**
+**What I think we should do next**
 1. Examine coefficient signs and magnitudes
 2. Identify which predictors are most important for each response
 3. Look for consistent patterns across all 4 models
