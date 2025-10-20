@@ -1,0 +1,596 @@
+---
+title: "Predictive Modeling for Particle Cluster Distributions"
+author: "Particle Clustering Proj Group"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Overview
+
+**Goal**: Predict 4 summary statistics of particle cluster volume distributions
+
+- **Mean** ($\mu$): Average cluster volume
+- **Variance** ($\sigma^2$): Variability in cluster sizes  
+- **Skewness** ($\gamma$): Asymmetry of distribution
+- **Kurtosis** ($\kappa$): Tail heaviness
+
+**Modeling Pipeline** for each response:
+
+1. Apply log transformations to handle right skew
+2. Fit full model with 2-way interactions
+3. **Best subset selection** → Choose which variables to include
+4. **OLS vs Ridge** → Choose how to estimate coefficients  
+5. Select final model with best CV performance (10 fold)
+
+---
+
+# 1. Setup
+
+## 1.1 Load Packages
+
+```{r packages}
+library(tidyverse)
+library(leaps)      # best subset selection
+library(glmnet)     # ridge regression
+set.seed(325)       # reproducibility
+```
+
+## 1.2 Load Data
+
+```{r load_data}
+train <- read_csv("data-train-processed.csv")
+cat("# observations:", nrow(train))
+```
+
+## 1.3 Transform Predictors
+
+```{r transform_predictors}
+train <- train %>%
+  mutate(
+    # Re: Categorical (3 levels: 90, 224, 398)
+    Re = as.factor(Re),
+    
+    # Fr: Inverse logit (handles Inf values)
+    Fr_invlogit = 1 / (1 + exp(-as.numeric(Fr))),
+    
+    # St: Log transform (right-skewed)
+    log_St = log(St)
+  )
+```
+
+## 1.4 Transform Responses
+
+```{r transform_responses}
+#log
+train <- train %>%
+  mutate(
+    log_mean = log(mean),
+    log_variance = log(variance),
+    log_skewness = log(skewness),
+    log_kurtosis = log(kurtosis)
+  )
+```
+
+## 1.5 Helper Functions
+
+```{r helper_cv}
+# 10-fold cross-validation RMSE
+cv_rmse <- function(data, formula, k = 10) {
+  # Create equal-sized folds
+  n <- nrow(data)
+  fold_ids <- sample(rep(1:k, length.out = n))
+  data$fold <- fold_ids
+  
+  cv_errors <- numeric(k)
+  
+  for(i in 1:k) {
+    train_fold <- data[data$fold != i, ]
+    test_fold <- data[data$fold == i, ]
+    
+    model <- lm(formula, data = train_fold)
+    preds <- predict(model, newdata = test_fold)
+    
+    response <- all.vars(formula)[1]
+    cv_errors[i] <- mean((test_fold[[response]] - preds)^2)
+  }
+  
+  return(sqrt(mean(cv_errors)))
+}
+```
+
+```{r helper_subset}
+# top models from regsubsets
+show_top_models <- function(regfit, n = 5) {
+  summ <- summary(regfit)
+  data.frame(
+    n_vars = 1:length(summ$bic),
+    BIC = summ$bic,
+    adj_R2 = summ$adjr2
+  ) %>% 
+    arrange(BIC) %>% 
+    head(n)
+}
+
+# clean up by extracting variable names from regsubsets, handling factors properly
+get_var_names <- function(regfit, nvars) {
+  coef_names <- names(coef(regfit, nvars))[-1]  # remove intercept
+  
+  # replace factor dummy variables (Re90, Re224, Re398) with original factor name
+  coef_names <- gsub("Re90|Re224|Re398", "Re", coef_names)
+  
+  # Remove duplicates (in case Re appeared multiple times)
+  coef_names <- unique(coef_names)
+  
+  return(coef_names)
+}
+```
+
+---
+
+# 2. Model 1: MEAN
+
+## 2.1 Fit Full Model
+
+```{r mean_full}
+cat("=== MODELING MEAN ===\n\n")
+
+#full model
+formula_mean_full <- log_mean ~ log_St + Re + Fr_invlogit + log_St:Re + log_St:Fr_invlogit + Re:Fr_invlogit
+
+lm_mean_full <- lm(formula_mean_full, data = train)
+cat("Full model R²:", summary(lm_mean_full)$r.squared, "\n")
+cat("Full model variables:", length(coef(lm_mean_full)) - 1)
+```
+
+## 2.2 Best Subset Selection
+
+```{r mean_subset}
+# subset selection
+regfit_mean <- regsubsets(formula_mean_full, data = train, nvmax = 10, method = "exhaustive")
+
+# top 5 models
+cat("Top 5 models by BIC:\n")
+print(show_top_models(regfit_mean, n = 5))
+
+# Extract best model (lowest BIC)
+best_models_mean <- show_top_models(regfit_mean)
+best_size <- best_models_mean$n_vars[1]
+best_vars <- get_var_names(regfit_mean, best_size)
+
+# Note: regsubsets reports n_vars including dummy variables (e.g., Re224, Re398)
+# After collapsing dummies back to factors, we have fewer distinct terms
+cat("Best model has", length(best_vars), "variables (", best_size, "including dummies)\n")
+cat("Variables:", paste(best_vars, collapse = ", "))
+```
+
+## 2.3 Build Best Model Formula
+
+```{r mean_formula}
+#create formula to load
+formula_mean_best <- as.formula(paste("log_mean ~", paste(best_vars, collapse = " + ")))
+cat("best model formula:\n")
+print(formula_mean_best)
+```
+
+## 2.4 Compare OLS vs Ridge
+
+```{r mean_compare}
+# fit OLS
+lm_mean_best <- lm(formula_mean_best, data = train)
+cv_ols_mean <- cv_rmse(train, formula_mean_best, k = 10)
+cat("OLS CV RMSE:", cv_ols_mean, "\n")
+
+# Fit Ridge on best model
+X_mean <- model.matrix(formula_mean_best, data = train)[, -1]
+y_mean <- train$log_mean
+ridge_mean <- cv.glmnet(X_mean, y_mean, alpha = 0, nfolds = 10)
+cv_ridge_mean <- min(sqrt(ridge_mean$cvm))
+cat("Ridge CV RMSE:", cv_ridge_mean, "\n")
+cat("Best lambda:", ridge_mean$lambda.min, "\n")
+```
+
+## 2.5 Select Final Model
+
+```{r mean_final}
+if(cv_ols_mean < cv_ridge_mean) {
+  cat("final model OLS (lower CV RMSE)\n")
+  final_model_mean <- lm_mean_best
+  use_ridge_mean <- FALSE
+} else {
+  cat("final model ridge (lower CV RMSE)\n")
+  final_model_mean <- ridge_mean
+  use_ridge_mean <- TRUE
+}
+```
+
+---
+
+# 3. Model 2: VARIANCE
+
+## 3.1 Fit Full Model
+
+```{r var_full}
+cat("=== MODELING VARIANCE ===\n\n")
+
+
+#full model
+formula_var_full <- log_variance ~ log_St + Re + Fr_invlogit + log_St:Re + log_St:Fr_invlogit + Re:Fr_invlogit
+
+lm_var_full <- lm(formula_var_full, data = train)
+cat("Full model R²:", summary(lm_var_full)$r.squared, "\n")
+cat("Full model variables:", length(coef(lm_var_full)) - 1)
+```
+
+## 3.2 Best Subset Selection
+
+```{r var_subset}
+# subset selection
+regfit_var <- regsubsets(formula_var_full, data = train, nvmax = 10, method = "exhaustive")
+
+# top 5 models
+cat("Top 5 models by BIC:\n")
+print(show_top_models(regfit_var, n = 5))
+
+best_models_var <- show_top_models(regfit_var)
+best_size <- best_models_var$n_vars[1]
+best_vars <- get_var_names(regfit_var, best_size)
+
+# Note: regsubsets reports n_vars including dummy variables (e.g., Re224, Re398)
+# After collapsing dummies back to factors, we have fewer distinct terms
+cat("Best model has", length(best_vars), "variables (", best_size, "including dummies)\n")
+cat("Variables:", paste(best_vars, collapse = ", "))
+```
+
+## 3.3 Build Best Model Formula
+
+```{r var_formula}
+#formula
+formula_var_best <- as.formula(paste("log_variance ~", paste(best_vars, collapse = " + ")))
+cat("best model formula:\n")
+print(formula_var_best)
+```
+
+## 3.4 Compare OLS vs Ridge
+
+```{r var_compare}
+# fit OLS
+lm_var_best <- lm(formula_var_best, data = train)
+cv_ols_var <- cv_rmse(train, formula_var_best, k = 10)
+cat("OLS CV RMSE:", round(cv_ols_var, 4), "\n")
+
+X_var <- model.matrix(formula_var_best, data = train)[, -1]
+y_var <- train$log_variance
+ridge_var <- cv.glmnet(X_var, y_var, alpha = 0, nfolds = 10)
+cv_ridge_var <- min(sqrt(ridge_var$cvm))
+cat("Ridge CV RMSE:", cv_ridge_var, "\n")
+cat("Best lambda:", ridge_var$lambda.min, "\n")
+```
+
+## 3.5 Select Final Model
+
+```{r var_final}
+if(cv_ols_var < cv_ridge_var) {
+  cat("final model OLS (lower CV RMSE)\n")
+  final_model_var <- lm_var_best
+  use_ridge_var <- FALSE
+} else {
+  cat("final model ridge (lower CV RMSE)\n")
+  final_model_var <- ridge_var
+  use_ridge_var <- TRUE
+}
+```
+
+---
+
+# 4. Model 3: SKEWNESS
+
+## 4.1 Fit Full Model
+
+```{r skew_full}
+cat("=== MODELING SKEWNESS ===\n\n")
+
+# Define full model with all 2-way interactions
+formula_skew_full <- log_skewness ~ log_St + Re + Fr_invlogit + log_St:Re + log_St:Fr_invlogit + Re:Fr_invlogit
+
+# Fit full model
+lm_skew_full <- lm(formula_skew_full, data = train)
+cat("Full model R²:", round(summary(lm_skew_full)$r.squared, 4), "\n")
+cat("Full model variables:", length(coef(lm_skew_full)) - 1)
+```
+
+## 4.2 Best Subset Selection
+
+```{r skew_subset}
+# subset selection
+regfit_skew <- regsubsets(formula_skew_full, data = train, nvmax = 10, method = "exhaustive")
+
+# top 5 models
+cat("Top 5 models by BIC:\n")
+print(show_top_models(regfit_skew, n = 5))
+
+best_models_skew <- show_top_models(regfit_skew)
+best_size <- best_models_skew$n_vars[1]
+best_vars <- get_var_names(regfit_skew, best_size)
+
+# Note: regsubsets reports n_vars including dummy variables (e.g., Re224, Re398)
+# After collapsing dummies back to factors, we have fewer distinct terms
+cat("Best model has", length(best_vars), "variables (", best_size, "including dummies)\n")
+cat("Variables:", paste(best_vars, collapse = ", "))
+```
+
+## 4.3 Build Best Model Formula
+
+```{r skew_formula}
+# Create formula for best model
+formula_skew_best <- as.formula(paste("log_skewness ~", paste(best_vars, collapse = " + ")))
+cat("best model formula:\n")
+print(formula_skew_best)
+```
+
+## 4.4 Compare OLS vs Ridge
+
+```{r skew_compare}
+# fit OLS
+lm_skew_best <- lm(formula_skew_best, data = train)
+cv_ols_skew <- cv_rmse(train, formula_skew_best, k = 10)
+cat("OLS CV RMSE:", round(cv_ols_skew, 4), "\n")
+
+X_skew <- model.matrix(formula_skew_best, data = train)[, -1]
+y_skew <- train$log_skewness
+ridge_skew <- cv.glmnet(X_skew, y_skew, alpha = 0, nfolds = 10)
+cv_ridge_skew <- min(sqrt(ridge_skew$cvm))
+cat("Ridge CV RMSE:", cv_ridge_skew, "\n")
+cat("Best lambda:", ridge_skew$lambda.min, "\n")
+```
+
+## 4.5 Select Final Model
+
+```{r skew_final}
+if(cv_ols_skew < cv_ridge_skew) {
+  cat("final model OLS (lower CV RMSE)\n")
+  final_model_skew <- lm_skew_best
+  use_ridge_skew <- FALSE
+} else {
+  cat("final model ridge (lower CV RMSE)\n")
+  final_model_skew <- ridge_skew
+  use_ridge_skew <- TRUE
+}
+```
+
+---
+
+# 5. Model 4: KURTOSIS
+
+## 5.1 Fit Full Model
+
+```{r kurt_full}
+cat("=== MODELING KURTOSIS ===\n\n")
+
+#full
+formula_kurt_full <- log_kurtosis ~ log_St + Re + Fr_invlogit + log_St:Re + log_St:Fr_invlogit + Re:Fr_invlogit
+
+lm_kurt_full <- lm(formula_kurt_full, data = train)
+cat("Full model R²:", round(summary(lm_kurt_full)$r.squared, 4), "\n")
+cat("Full model variables:", length(coef(lm_kurt_full)) - 1)
+```
+
+## 5.2 Best Subset Selection
+
+```{r kurt_subset}
+# subset selection
+regfit_kurt <- regsubsets(formula_kurt_full, data = train, nvmax = 10, method = "exhaustive")
+
+# top 5 models
+cat("Top 5 models by BIC:\n")
+print(show_top_models(regfit_kurt, n = 5))
+
+best_models_kurt <- show_top_models(regfit_kurt)
+best_size <- best_models_kurt$n_vars[1]
+best_vars <- get_var_names(regfit_kurt, best_size)
+
+# Note: regsubsets reports n_vars including dummy variables (e.g., Re224, Re398)
+# After collapsing dummies back to factors, we have fewer distinct terms
+cat("Best model has", length(best_vars), "variables (", best_size, "including dummies)\n")
+cat("Variables:", paste(best_vars, collapse = ", "))
+```
+
+## 5.3 Build Best Model Formula
+
+```{r kurt_formula}
+# formula
+formula_kurt_best <- as.formula(paste("log_kurtosis ~", paste(best_vars, collapse = " + ")))
+cat("best model formula:\n")
+print(formula_kurt_best)
+```
+
+## 5.4 Compare OLS vs Ridge
+
+```{r kurt_compare}
+# fit OLS
+lm_kurt_best <- lm(formula_kurt_best, data = train)
+cv_ols_kurt <- cv_rmse(train, formula_kurt_best, k = 10)
+cat("OLS CV RMSE:", round(cv_ols_kurt, 4), "\n")
+
+X_kurt <- model.matrix(formula_kurt_best, data = train)[, -1]
+y_kurt <- train$log_kurtosis
+ridge_kurt <- cv.glmnet(X_kurt, y_kurt, alpha = 0, nfolds = 10)
+cv_ridge_kurt <- min(sqrt(ridge_kurt$cvm))
+cat("Ridge CV RMSE:", round(cv_ridge_kurt, 4), "\n")
+cat("Best lambda:", round(ridge_kurt$lambda.min, 6), "\n")
+```
+
+## 5.5 Select Final Model
+
+```{r kurt_final}
+if(cv_ols_kurt < cv_ridge_kurt) {
+  cat("final model OLS (lower CV RMSE)\n")
+  final_model_kurt <- lm_kurt_best
+  use_ridge_kurt <- FALSE
+} else {
+  cat("final model ridge (lower CV RMSE)\n")
+  final_model_kurt <- ridge_kurt
+  use_ridge_kurt <- TRUE
+}
+```
+
+---
+
+# 6. Model Diagnostics
+
+## 6.1 Residual Plots
+
+```{r diagnostics_resid, fig.height=8, fig.width=10}
+par(mfrow = c(2, 2))
+
+plot(lm_mean_best, which = 1, main = "Mean: Residuals vs Fitted")
+plot(lm_var_best, which = 1, main = "Variance: Residuals vs Fitted")
+plot(lm_skew_best, which = 1, main = "Skewness: Residuals vs Fitted")
+plot(lm_kurt_best, which = 1, main = "Kurtosis: Residuals vs Fitted")
+```
+
+## 6.2 Q-Q Plots
+
+```{r diagnostics_qq, fig.height=8, fig.width=10}
+par(mfrow = c(2, 2))
+
+plot(lm_mean_best, which = 2, main = "Mean: Q-Q Plot")
+plot(lm_var_best, which = 2, main = "Variance: Q-Q Plot")
+plot(lm_skew_best, which = 2, main = "Skewness: Q-Q Plot")
+plot(lm_kurt_best, which = 2, main = "Kurtosis: Q-Q Plot")
+```
+
+---
+
+# 7. Test Set Predictions
+
+## 7.1 Load and Transform Test Data
+
+```{r test_load}
+test <- read_csv("data-test.csv")
+```
+
+```{r test_transform}
+# Apply same transformations as training data
+test <- test %>%
+  mutate(
+    Re = as.factor(Re),
+    Fr_invlogit = 1 / (1 + exp(-as.numeric(Fr))),
+    log_St = log(St)
+  )
+```
+
+## 7.2 Generate Predictions
+
+```{r test_predict}
+# predictions using the selected final models (OLS or Ridge)
+
+# Mean predictions
+if(use_ridge_mean) {
+  # For Ridge, need design matrix matching training data
+  test_temp <- test %>% mutate(log_mean = 0)  # dummy response for model.matrix
+  X_test_mean <- model.matrix(formula_mean_best, data = test_temp)[, -1]
+  pred_mean_log <- predict(ridge_mean, newx = X_test_mean, s = "lambda.min")[,1]
+} else {
+  pred_mean_log <- predict(lm_mean_best, newdata = test)
+}
+
+# Variance predictions
+if(use_ridge_var) {
+  test_temp <- test %>% mutate(log_variance = 0)  # dummy response
+  X_test_var <- model.matrix(formula_var_best, data = test_temp)[, -1]
+  pred_var_log <- predict(ridge_var, newx = X_test_var, s = "lambda.min")[,1]
+} else {
+  pred_var_log <- predict(lm_var_best, newdata = test)
+}
+
+# Skewness predictions
+if(use_ridge_skew) {
+  test_temp <- test %>% mutate(log_skewness = 0)  # dummy response
+  X_test_skew <- model.matrix(formula_skew_best, data = test_temp)[, -1]
+  pred_skew_log <- predict(ridge_skew, newx = X_test_skew, s = "lambda.min")[,1]
+} else {
+  pred_skew_log <- predict(lm_skew_best, newdata = test)
+}
+
+# Kurtosis predictions
+if(use_ridge_kurt) {
+  test_temp <- test %>% mutate(log_kurtosis = 0)  # dummy response
+  X_test_kurt <- model.matrix(formula_kurt_best, data = test_temp)[, -1]
+  pred_kurt_log <- predict(ridge_kurt, newx = X_test_kurt, s = "lambda.min")[,1]
+} else {
+  pred_kurt_log <- predict(lm_kurt_best, newdata = test)
+}
+
+# Combine and back-transform from log scale
+test_predictions <- test %>%
+  mutate(
+    pred_mean = exp(pred_mean_log),
+    pred_variance = exp(pred_var_log),
+    pred_skewness = exp(pred_skew_log),
+    pred_kurtosis = exp(pred_kurt_log)
+  ) %>%
+  select(St, Re, Fr, pred_mean, pred_variance, pred_skewness, pred_kurtosis)
+
+# display head
+cat("First 10 predictions:\n")
+as.data.frame(test_predictions[1:10, ])
+```
+
+## 7.3 Save Predictions
+
+```{r test_save}
+write_csv(test_predictions, "predictions.csv")
+```
+
+---
+
+# 8. Model Summaries
+
+## 8.1 Mean Model
+
+```{r summary_mean}
+cat("Mean model summary")
+summary(lm_mean_best)
+```
+
+## 8.2 Variance Model
+
+```{r summary_var}
+cat("Variance model summary")
+summary(lm_var_best)
+```
+
+## 8.3 Skewness Model
+
+```{r summary_skew}
+cat("Skewness Model summary")
+summary(lm_skew_best)
+```
+
+## 8.4 Kurtosis Model
+
+```{r summary_kurt}
+cat("Kurtosis model summary")
+summary(lm_kurt_best)
+```
+
+---
+
+# 9. Key Findings
+
+**Model Performance**:
+- All models use log transformations to handle right skew
+- Best subset selection reduced variable count from full model
+- OLS vs Ridge comparison determined final estimation method
+
+**What I thikn we should do next**
+1. Examine coefficient signs and magnitudes
+2. Identify which predictors are most important for each response
+3. Look for consistent patterns across all 4 models
+4. Interpret interaction effects in physical terms
+5. Compare CV RMSE across models to see which responses are easiest/hardest to predict
+
