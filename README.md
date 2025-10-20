@@ -48,7 +48,7 @@ We want to explore how fluid turbulence (quantified by Reynolds number or Re), g
 
         -   log(St)
 
-        -   log(Fr_invlogit)\
+        -   log(Fr_invlogit)
 
 ### **Findings**
 
@@ -66,13 +66,13 @@ We want to explore how fluid turbulence (quantified by Reynolds number or Re), g
 
 -   Built four separate linear models:
 
-    -   mean \~ St + Re + Fr_invlogit
+    -   mean ~ St + Re + Fr_invlogit
 
-    -   variance \~ St + Re + Fr_invlogit
+    -   variance ~ St + Re + Fr_invlogit
 
-    -   skewness \~ St + Re + Fr_invlogit
+    -   skewness ~ St + Re + Fr_invlogit
 
-    -   kurtosis \~ St + Re + Fr_invlogit
+    -   kurtosis ~ St + Re + Fr_invlogit
 
 -   **Findings:**
 
@@ -100,5 +100,4 @@ We want to explore how fluid turbulence (quantified by Reynolds number or Re), g
 
 -   Verified that predictor collinearity is low.
 
--   Established baseline regression models and planned a refinement workflow.\
-    \
+-   Established baseline regression models and planned a refinement workflow.
