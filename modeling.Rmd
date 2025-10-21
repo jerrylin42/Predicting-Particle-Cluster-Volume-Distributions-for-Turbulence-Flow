@@ -22,9 +22,11 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 1. Apply log transformations to handle right skew
 2. Fit full model with 2-way interactions
-3. **Best subset selection** → Choose which variables to include
-4. **OLS vs Ridge** → Choose how to estimate coefficients  
-5. Select final model with best CV performance (10 fold)
+3. **Best subset selection** → Choose which variables to include (BIC)
+4. **OLS vs Ridge** → Choose how to estimate coefficients (10-fold CV)
+5. Generate predictions with **confidence intervals** to quantify uncertainty
+
+**Important Note on Re:** Although Re only has 3 observed values (90, 224, 398), it is treated as **continuous** to allow prediction at any Reynolds number. However, this introduces substantial uncertainty, which we quantify using 95% confidence and prediction intervals.
 
 ---
 
@@ -51,8 +53,9 @@ cat("# observations:", nrow(train))
 ```{r transform_predictors}
 train <- train %>%
   mutate(
-    # Re: Categorical (3 levels: 90, 224, 398)
-    Re = as.factor(Re),
+    # Treating as continuous allows prediction at any Re value
+    # Note: High uncertainty expected due to limited observed values
+    Re = as.numeric(Re),
     
     # Fr: Inverse logit (handles Inf values)
     Fr_invlogit = 1 / (1 + exp(-as.numeric(Fr))),
@@ -114,19 +117,6 @@ show_top_models <- function(regfit, n = 5) {
     arrange(BIC) %>% 
     head(n)
 }
-
-# clean up by extracting variable names from regsubsets, handling factors properly
-get_var_names <- function(regfit, nvars) {
-  coef_names <- names(coef(regfit, nvars))[-1]  # remove intercept
-  
-  # replace factor dummy variables (Re90, Re224, Re398) with original factor name
-  coef_names <- gsub("Re90|Re224|Re398", "Re", coef_names)
-  
-  # Remove duplicates (in case Re appeared multiple times)
-  coef_names <- unique(coef_names)
-  
-  return(coef_names)
-}
 ```
 
 ---
@@ -160,11 +150,9 @@ print(show_top_models(regfit_mean, n = 5))
 # Extract best model (lowest BIC)
 best_models_mean <- show_top_models(regfit_mean)
 best_size <- best_models_mean$n_vars[1]
-best_vars <- get_var_names(regfit_mean, best_size)
+best_vars <- names(coef(regfit_mean, best_size))[-1]  # Remove intercept
 
-# Note: regsubsets reports n_vars including dummy variables (e.g., Re224, Re398)
-# After collapsing dummies back to factors, we have fewer distinct terms
-cat("Best model has", length(best_vars), "variables (", best_size, "including dummies)\n")
+cat("Best model has", best_size, "variables\n")
 cat("Variables:", paste(best_vars, collapse = ", "))
 ```
 
@@ -243,11 +231,9 @@ print(show_top_models(regfit_var, n = 5))
 
 best_models_var <- show_top_models(regfit_var)
 best_size <- best_models_var$n_vars[1]
-best_vars <- get_var_names(regfit_var, best_size)
+best_vars <- names(coef(regfit_var, best_size))[-1]  # Remove intercept
 
-# Note: regsubsets reports n_vars including dummy variables (e.g., Re224, Re398)
-# After collapsing dummies back to factors, we have fewer distinct terms
-cat("Best model has", length(best_vars), "variables (", best_size, "including dummies)\n")
+cat("Best model has", best_size, "variables\n")
 cat("Variables:", paste(best_vars, collapse = ", "))
 ```
 
@@ -320,11 +306,9 @@ print(show_top_models(regfit_skew, n = 5))
 
 best_models_skew <- show_top_models(regfit_skew)
 best_size <- best_models_skew$n_vars[1]
-best_vars <- get_var_names(regfit_skew, best_size)
+best_vars <- names(coef(regfit_skew, best_size))[-1]  # Remove intercept
 
-# Note: regsubsets reports n_vars including dummy variables (e.g., Re224, Re398)
-# After collapsing dummies back to factors, we have fewer distinct terms
-cat("Best model has", length(best_vars), "variables (", best_size, "including dummies)\n")
+cat("Best model has", best_size, "variables\n")
 cat("Variables:", paste(best_vars, collapse = ", "))
 ```
 
@@ -396,11 +380,9 @@ print(show_top_models(regfit_kurt, n = 5))
 
 best_models_kurt <- show_top_models(regfit_kurt)
 best_size <- best_models_kurt$n_vars[1]
-best_vars <- get_var_names(regfit_kurt, best_size)
+best_vars <- names(coef(regfit_kurt, best_size))[-1]  # Remove intercept
 
-# Note: regsubsets reports n_vars including dummy variables (e.g., Re224, Re398)
-# After collapsing dummies back to factors, we have fewer distinct terms
-cat("Best model has", length(best_vars), "variables (", best_size, "including dummies)\n")
+cat("Best model has", best_size, "variables\n")
 cat("Variables:", paste(best_vars, collapse = ", "))
 ```
 
@@ -486,7 +468,7 @@ test <- read_csv("data-test.csv")
 # Apply same transformations as training data
 test <- test %>%
   mutate(
-    Re = as.factor(Re),
+    Re = as.numeric(Re),
     Fr_invlogit = 1 / (1 + exp(-as.numeric(Fr))),
     log_St = log(St)
   )
@@ -546,10 +528,49 @@ test_predictions <- test %>%
 
 # display head
 cat("First 10 predictions:\n")
-as.data.frame(test_predictions[1:10, ])
+print(test_predictions[1:10, ])
 ```
 
-## 7.3 Save Predictions
+## 7.3 Confidence Intervals for Predictions
+
+**Note:** Since Re only has 3 observed values (90, 224, 398) but is treated as continuous, there is substantial uncertainty in the relationship between Re and cluster statistics. Confidence intervals quantify this uncertainty.
+
+```{r confidence_intervals}
+# Generate 95% confidence intervals for OLS predictions
+# (Ridge predictions don't have built-in CIs, so we use OLS models)
+
+# Mean model CIs
+if(!use_ridge_mean) {
+  pred_mean_ci <- predict(lm_mean_best, newdata = test, interval = "confidence", level = 0.95)
+  pred_mean_pi <- predict(lm_mean_best, newdata = test, interval = "prediction", level = 0.95)
+  
+  # Back-transform to original scale
+  mean_intervals <- test %>%
+    select(St, Re, Fr) %>%
+    mutate(
+      pred = exp(pred_mean_ci[, "fit"]),
+      ci_lower = exp(pred_mean_ci[, "lwr"]),
+      ci_upper = exp(pred_mean_ci[, "upr"]),
+      pi_lower = exp(pred_mean_pi[, "lwr"]),
+      pi_upper = exp(pred_mean_pi[, "upr"]),
+      ci_width = ci_upper - ci_lower,
+      pi_width = pi_upper - pi_lower
+    )
+  
+  cat("Mean model - Average 95% CI width:", round(mean(mean_intervals$ci_width), 4), "\n")
+  cat("Mean model - Average 95% PI width:", round(mean(mean_intervals$pi_width), 4), "\n\n")
+  
+  cat("First 5 predictions with intervals:\n")
+  print(head(mean_intervals, 5))
+}
+
+# Interpretation:
+# - Confidence Interval (CI): Uncertainty in the mean prediction
+# - Prediction Interval (PI): Uncertainty for a new observation (wider)
+# - wise intervals are expected since only3 observed Re values
+```
+
+## 7.4 Save Predictions
 
 ```{r test_save}
 write_csv(test_predictions, "predictions.csv")
