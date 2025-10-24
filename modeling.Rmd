@@ -13,31 +13,28 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 **Goal**: Predict 4 summary statistics of particle cluster volume distributions
 
-- **Mean** ($\mu$): Average cluster volume
-- **Variance** ($\sigma^2$): Variability in cluster sizes  
-- **Skewness** ($\gamma$): Asymmetry of distribution
-- **Kurtosis** ($\kappa$): Tail heaviness
+-   **Mean** ($\mu$): Average cluster volume
+-   **Variance** ($\sigma^2$): Variability in cluster sizes\
+-   **Skewness** ($\gamma$): Asymmetry of distribution
+-   **Kurtosis** ($\kappa$): Tail heaviness
 
 **Modeling Pipeline** for each response:
 
-1. Apply log transformations to handle right skew
-2. Fit full model with 2-way interactions
-3. **Best subset selection + OLS** → Variable selection via BIC, fit OLS on selected variables
-4. **LASSO on full model** → Automatic variable selection via regularization
-5. **Compare via 10-fold CV** → Select method with lowest CV RMSE
-6. **Two-stage inference** → When LASSO is selected, fit OLS on LASSO-selected variables for valid confidence intervals
-7. Generate predictions with **confidence intervals** to quantify uncertainty
+1.  Apply log transformations to handle right skew
+2.  Fit full model with 2-way interactions
+3.  **Best subset selection + OLS** → Variable selection via BIC, fit OLS on selected variables
+4.  **LASSO on full model** → Automatic variable selection via regularization
+5.  **Compare via 10-fold CV** → Select method with lowest CV RMSE
+6.  **Two-stage inference** → When LASSO is selected, fit OLS on LASSO-selected variables for valid confidence intervals
+7.  Generate predictions with **confidence intervals** to quantify uncertainty
 
-**Two-Stage Approach (Instructor Guidance):**
-When LASSO is selected as the better method:
-- **Stage 1 (Selection):** Use LASSO to identify important variables (non-zero coefficients)
-- **Stage 2 (Inference):** Fit OLS using only LASSO-selected variables to obtain valid confidence intervals
+**Two-Stage Approach (Instructor Guidance):** When LASSO is selected as the better method: - **Stage 1 (Selection):** Use LASSO to identify important variables (non-zero coefficients) - **Stage 2 (Inference):** Fit OLS using only LASSO-selected variables to obtain valid confidence intervals
 
 This approach is necessary because getting predictive standard errors directly from `glmnet` is difficult. The two-stage method gives "slightly wider" predictive intervals but properly quantifies uncertainty.
 
 **Important Note on Re:** Although Re only has 3 observed values (90, 224, 398), it is treated as **continuous** to allow prediction at any Reynolds number. However, this introduces substantial uncertainty, which we quantify using 95% confidence and prediction intervals.
 
----
+------------------------------------------------------------------------
 
 # 1. Setup
 
@@ -128,7 +125,7 @@ show_top_models <- function(regfit, n = 5) {
 }
 ```
 
----
+------------------------------------------------------------------------
 
 # 2. Model 1: MEAN
 
@@ -144,6 +141,7 @@ lm_mean_full <- lm(formula_mean_full, data = train)
 cat("Full model R²:", summary(lm_mean_full)$r.squared, "\n")
 cat("Full model variables:", length(coef(lm_mean_full)) - 1)
 ```
+
 A full multiple linear regression model was fitted to predict log_mean using the three predictors (log_St, Re, and Fr_invlogit) and all pairwise interaction terms. The resulting model achieved an $R^2$ of 99.75% with 9 model variables, indicating an excellent fit to the training data and suggesting that the predictors capture almost all variation in the mean cluster volume. The inclusion of interaction terms is physically meaningful, as particle inertia effects may depend on turbulence and gravity. However, such a high $R^2$ could suggest overfitting, so subsequent steps will use cross-validation and subset selection to ensure generalizability.
 
 ## 2.2 Best Subset Selection
@@ -166,7 +164,6 @@ cat("Variables:", paste(best_vars, collapse = ", "))
 ```
 
 Best subset selection identified a 6-variable model as optimal based on the BIC score, achieving an adjusted $R^2$ of 99.71%, which is nearly identical to the full model’s performance but with fewer terms. This indicates that some interaction terms are unnecessary and that the simplified model provides a better balance between accuracy and interpretability, reducing the risk of overfitting.
-
 
 ## 2.3 Build Best Model Formula
 
@@ -223,8 +220,8 @@ if(cv_ols_mean < cv_lasso_mean) {
   use_lasso_mean <- TRUE
 }
 ```
-The comparison shows which variable selection approach performs better: explicit subset selection via BIC (OLS) versus regularization-based automatic selection (LASSO). When LASSO is selected, we use a two-stage approach: LASSO identifies important variables, then we fit OLS on those selected variables to obtain valid confidence intervals (following instructor guidance).
----
+
+## The comparison shows which variable selection approach performs better: explicit subset selection via BIC (OLS) versus regularization-based automatic selection (LASSO). When LASSO is selected, we use a two-stage approach: LASSO identifies important variables, then we fit OLS on those selected variables to obtain valid confidence intervals (following instructor guidance).
 
 # 3. Model 2: VARIANCE
 
@@ -313,7 +310,7 @@ if(cv_ols_var < cv_lasso_var) {
 }
 ```
 
----
+------------------------------------------------------------------------
 
 # 4. Model 3: SKEWNESS
 
@@ -402,7 +399,7 @@ if(cv_ols_skew < cv_lasso_skew) {
 }
 ```
 
----
+------------------------------------------------------------------------
 
 # 5. Model 4: KURTOSIS
 
@@ -490,7 +487,7 @@ if(cv_ols_kurt < cv_lasso_kurt) {
 }
 ```
 
----
+------------------------------------------------------------------------
 
 # 6. Model Diagnostics
 
@@ -517,9 +514,10 @@ plot(lm_var_best, which = 2, main = "Variance: Q-Q Plot")
 plot(lm_skew_best, which = 2, main = "Skewness: Q-Q Plot")
 plot(lm_kurt_best, which = 2, main = "Kurtosis: Q-Q Plot")
 ```
+
 The Q–Q plot for the mean model shows residuals close to normal, indicating the linear regression assumptions are well met. In contrast, the variance, skewness, and kurtosis models show substantial departures from normality, particularly in the tails, suggesting that these models may require more complex approaches to better capture the data patterns at the tails. (Same analysis as with residual plots)
- 
----
+
+------------------------------------------------------------------------
 
 # 7. Test Set Predictions
 
@@ -668,7 +666,7 @@ cat("- When LASSO was selected, CIs come from OLS on LASSO-selected variables\n"
 write_csv(test_predictions, "predictions.csv")
 ```
 
----
+------------------------------------------------------------------------
 
 # 8. Model Summaries
 
@@ -719,20 +717,10 @@ cv_results %>%
   arrange(Best_RMSE)
 ```
 
----
+------------------------------------------------------------------------
 
 # 9. Key Findings
 
-**Model Performance**:
-- All models use log transformations to handle right skew
-- Best subset selection identifies optimal predictor combinations (OLS approach)
-- LASSO on full model performs automatic variable selection via regularization
-- Cross-validation determines which approach (subset+OLS vs LASSO) works best per response
+**Model Performance**: - All models use log transformations to handle right skew - Best subset selection identifies optimal predictor combinations (OLS approach) - LASSO on full model performs automatic variable selection via regularization - Cross-validation determines which approach (subset+OLS vs LASSO) works best per response
 
-**What I think we should do next**
-1. Examine coefficient signs and magnitudes
-2. Identify which predictors are most important for each response
-3. Look for consistent patterns across all 4 models
-4. Interpret interaction effects in physical terms
-5. Compare CV RMSE across models to see which responses are easiest/hardest to predict
-
+**What I think we should do next** 1. Examine coefficient signs and magnitudes 2. Identify which predictors are most important for each response 3. Look for consistent patterns across all 4 models 4. Interpret interaction effects in physical terms 5. Compare CV RMSE across models to see which responses are easiest/hardest to predict

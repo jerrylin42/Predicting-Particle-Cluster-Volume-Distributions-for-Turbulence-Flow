@@ -16,11 +16,6 @@ train_data$Fr <- as.numeric(tolower(as.character(train_data$Fr)))
 train_data$Fr_invlogit <- 1 / (1 + exp(-train_data$Fr))
 
 
-#Re only has 3 distinct values, change to categorical var
-train_data$Re <- as.factor(train_data$Re)
-train_data |> distinct(Re)
-
-train_data
 ```
 
 ```{r}
@@ -33,6 +28,7 @@ ggpairs(
 ```{r}
 #check individual distributions of variables for more detail 
 hist(train_data$St, breaks=20)
+hist(train_data$Re, breaks=20)
 hist(train_data$Fr_invlogit, breaks=20)
 hist(train_data$mean, breaks=20)
 hist(train_data$variance, breaks=20)
@@ -62,17 +58,4 @@ summary(basickurt_lm)
 
 Observations: mean performs well as just a base model. The rest are subpar to okay going off of R\^2.
 
-### Recommendations for workflow:
-
-
-For EACH model:
-
-Start with full model, including all variables with log-transformations and their interaction effects
-
-Try multi-linear regression by running the full model through best-subset selection (should be ok, we don't have many variables) and use CV or AIC as the evaluation metric. We did this in a lab
-
-Pick a best candidate model from subset selection
-
-Then, run that model with those variables except change it from regular OLS to ridge (Let's not try lasso because we don't have many predictors already, but it can work still)
-
-Compared the OLS model to the ridge model using CV.
+### 
