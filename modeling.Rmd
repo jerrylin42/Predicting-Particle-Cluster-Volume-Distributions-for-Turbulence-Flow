@@ -141,11 +141,13 @@ cat("Full model variables:", length(coef(lm_mean_full)) - 1, "\n")
 regfit_mean <- regsubsets(formula_mean_full, data = train, nvmax = 10, method = "exhaustive")
 reg_summary_mean <- summary(regfit_mean)
 
-# look at AIC across model sizes
-reg_summary_mean$aic
+# calculate AIC (not provided by regsubsets, so we compute it)
+n <- nrow(train)
+k <- 1:length(reg_summary_mean$rss)  # number of variables in each model
+aic_vals <- n * log(reg_summary_mean$rss / n) + 2 * (k + 1)  # k+1 for intercept
 
 # best model by AIC
-best_size <- which.min(reg_summary_mean$aic)
+best_size <- which.min(aic_vals)
 cat("Best model size:", best_size, "variables\n")
 
 best_vars <- names(coef(regfit_mean, best_size))[-1]
@@ -231,9 +233,12 @@ cat("Full model variables:", length(coef(lm_var_full)) - 1, "\n")
 regfit_var <- regsubsets(formula_var_full, data = train, nvmax = 10, method = "exhaustive")
 reg_summary_var <- summary(regfit_var)
 
-reg_summary_var$aic
+# calculate AIC
+n <- nrow(train)
+k <- 1:length(reg_summary_var$rss)
+aic_vals <- n * log(reg_summary_var$rss / n) + 2 * (k + 1)
 
-best_size <- which.min(reg_summary_var$aic)
+best_size <- which.min(aic_vals)
 cat("Best model size:", best_size, "variables\n")
 
 best_vars <- names(coef(regfit_var, best_size))[-1]
@@ -315,9 +320,12 @@ cat("Full model variables:", length(coef(lm_skew_full)) - 1, "\n")
 regfit_skew <- regsubsets(formula_skew_full, data = train, nvmax = 10, method = "exhaustive")
 reg_summary_skew <- summary(regfit_skew)
 
-reg_summary_skew$aic
+# calculate AIC
+n <- nrow(train)
+k <- 1:length(reg_summary_skew$rss)
+aic_vals <- n * log(reg_summary_skew$rss / n) + 2 * (k + 1)
 
-best_size <- which.min(reg_summary_skew$aic)
+best_size <- which.min(aic_vals)
 cat("Best model size:", best_size, "variables\n")
 
 best_vars <- names(coef(regfit_skew, best_size))[-1]
@@ -399,9 +407,12 @@ cat("Full model variables:", length(coef(lm_kurt_full)) - 1, "\n")
 regfit_kurt <- regsubsets(formula_kurt_full, data = train, nvmax = 10, method = "exhaustive")
 reg_summary_kurt <- summary(regfit_kurt)
 
-reg_summary_kurt$aic
+# calculate AIC
+n <- nrow(train)
+k <- 1:length(reg_summary_kurt$rss)
+aic_vals <- n * log(reg_summary_kurt$rss / n) + 2 * (k + 1)
 
-best_size <- which.min(reg_summary_kurt$aic)
+best_size <- which.min(aic_vals)
 cat("Best model size:", best_size, "variables\n")
 
 best_vars <- names(coef(regfit_kurt, best_size))[-1]
