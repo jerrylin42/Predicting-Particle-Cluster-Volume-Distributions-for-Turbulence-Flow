@@ -22,7 +22,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 1.  Apply log transformations to handle right skew
 2.  Fit full model with 2-way interactions
-3.  **Best subset selection + OLS** → Variable selection via BIC, fit OLS on selected variables (with hierarchy)
+3.  **Best subset selection + OLS** → Variable selection via AIC, fit OLS on selected variables (with hierarchy)
 4.  **LASSO on full model** → Automatic variable selection via regularization
 5.  **Compare via 10-fold CV** → Select method with lowest CV RMSE
 6.  **Two-stage inference** → When LASSO is selected: predictions from LASSO, intervals from OLS proxy
@@ -122,11 +122,11 @@ cv_rmse <- function(data, formula, k = 10) {
 show_top_models <- function(regfit, n = 5) {
   summ <- summary(regfit)
   data.frame(
-    n_vars = 1:length(summ$bic),
-    BIC = summ$bic,
+    n_vars = 1:length(summ$aic),
+    AIC = summ$aic,
     adj_R2 = summ$adjr2
   ) %>% 
-    arrange(BIC) %>% 
+    arrange(AIC) %>% 
     head(n)
 }
 
@@ -177,10 +177,10 @@ A full multiple linear regression model was fitted to predict log_mean using the
 regfit_mean <- regsubsets(formula_mean_full, data = train, nvmax = 10, method = "exhaustive")
 
 # top 5 models
-cat("Top 5 models by BIC:\n")
+cat("Top 5 models by AIC:\n")
 print(show_top_models(regfit_mean, n = 5))
 
-# Extract best model (lowest BIC)
+# Extract best model (lowest AIC)
 best_models_mean <- show_top_models(regfit_mean)
 best_size <- best_models_mean$n_vars[1]
 best_vars <- names(coef(regfit_mean, best_size))[-1]  # Remove intercept
@@ -189,7 +189,7 @@ cat("Best model has", best_size, "variables\n")
 cat("Variables:", paste(best_vars, collapse = ", "))
 ```
 
-Best subset selection identified a 6-variable model as optimal based on the BIC score, achieving an adjusted $R^2$ of 99.71%, which is nearly identical to the full model’s performance but with fewer terms. This indicates that some interaction terms are unnecessary and that the simplified model provides a better balance between accuracy and interpretability, reducing the risk of overfitting.
+Best subset selection identified a 6-variable model as optimal based on the AIC score, achieving an adjusted $R^2$ of 99.71%, which is nearly identical to the full model's performance but with fewer terms. This indicates that some interaction terms are unnecessary and that the simplified model provides a better balance between accuracy and interpretability, reducing the risk of overfitting.
 
 ## 2.3 Build Best Model Formula
 
@@ -259,7 +259,7 @@ if(cv_ols_mean < cv_lasso_mean) {
 }
 ```
 
-## The comparison shows which variable selection approach performs better: explicit subset selection via BIC (OLS) versus regularization-based automatic selection (LASSO). When LASSO is selected, we use a two-stage approach: LASSO identifies important variables, then we fit OLS on those selected variables to obtain valid confidence intervals (following instructor guidance).
+## The comparison shows which variable selection approach performs better: explicit subset selection via AIC (OLS) versus regularization-based automatic selection (LASSO). When LASSO is selected, we use a two-stage approach: LASSO identifies important variables, then we fit OLS on those selected variables to obtain valid confidence intervals (following instructor guidance).
 
 # 3. Model 2: VARIANCE
 
@@ -284,7 +284,7 @@ cat("Full model variables:", length(coef(lm_var_full)) - 1)
 regfit_var <- regsubsets(formula_var_full, data = train, nvmax = 10, method = "exhaustive")
 
 # top 5 models
-cat("Top 5 models by BIC:\n")
+cat("Top 5 models by AIC:\n")
 print(show_top_models(regfit_var, n = 5))
 
 best_models_var <- show_top_models(regfit_var)
@@ -379,7 +379,7 @@ cat("Full model variables:", length(coef(lm_skew_full)) - 1)
 regfit_skew <- regsubsets(formula_skew_full, data = train, nvmax = 10, method = "exhaustive")
 
 # top 5 models
-cat("Top 5 models by BIC:\n")
+cat("Top 5 models by AIC:\n")
 print(show_top_models(regfit_skew, n = 5))
 
 best_models_skew <- show_top_models(regfit_skew)
@@ -473,7 +473,7 @@ cat("Full model variables:", length(coef(lm_kurt_full)) - 1)
 regfit_kurt <- regsubsets(formula_kurt_full, data = train, nvmax = 10, method = "exhaustive")
 
 # top 5 models
-cat("Top 5 models by BIC:\n")
+cat("Top 5 models by AIC:\n")
 print(show_top_models(regfit_kurt, n = 5))
 
 best_models_kurt <- show_top_models(regfit_kurt)
