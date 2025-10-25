@@ -22,17 +22,23 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 1.  Apply log transformations to handle right skew
 2.  Fit full model with 2-way interactions
-3.  **Best subset selection + OLS** → Variable selection via BIC, fit OLS on selected variables
+3.  **Best subset selection + OLS** → Variable selection via BIC, fit OLS on selected variables (with hierarchy)
 4.  **LASSO on full model** → Automatic variable selection via regularization
 5.  **Compare via 10-fold CV** → Select method with lowest CV RMSE
-6.  **Two-stage inference** → When LASSO is selected, fit OLS on LASSO-selected variables for valid confidence intervals
-7.  Generate predictions with **confidence intervals** to quantify uncertainty
+6.  **Two-stage inference** → When LASSO is selected: predictions from LASSO, intervals from OLS proxy
+7.  Generate predictions with **95% prediction intervals** to quantify uncertainty
 
-**Two-Stage Approach (Instructor Guidance):** When LASSO is selected as the better method: - **Stage 1 (Selection):** Use LASSO to identify important variables (non-zero coefficients) - **Stage 2 (Inference):** Fit OLS using only LASSO-selected variables to obtain valid confidence intervals
+**Two-Stage Approach:**\
+When LASSO is selected as the better method:
+
+-   **Stage 1 (Prediction):** Use LASSO model for point predictions
+-   **Stage 2 (Inference):** Use OLS fitted on LASSO-selected variables (OLS proxy) for prediction intervals
 
 This approach is necessary because getting predictive standard errors directly from `glmnet` is difficult. The two-stage method gives "slightly wider" predictive intervals but properly quantifies uncertainty.
 
-**Important Note on Re:** Although Re only has 3 observed values (90, 224, 398), it is treated as **continuous** to allow prediction at any Reynolds number. However, this introduces substantial uncertainty, which we quantify using 95% confidence and prediction intervals.
+**Hierarchy Principle:** All models enforce the hierarchy principle - if an interaction term (e.g., `Re:Fr_invlogit`) is selected, the corresponding main effects (`Re`, `Fr_invlogit`) must also be included. This ensures models are interpretable and statistically sound.
+
+**Important Note on Re:** Although Re only has 3 observed values (90, 224, 398), it is treated as **continuous** to allow prediction at any Reynolds number. However, this introduces substantial uncertainty, which we quantify using 95% prediction intervals.
 
 ------------------------------------------------------------------------
 
@@ -123,6 +129,26 @@ show_top_models <- function(regfit, n = 5) {
     arrange(BIC) %>% 
     head(n)
 }
+
+# Enforce hierarchy principle: if interaction selected, main effects must be included
+enforce_hierarchy <- function(vars) {
+  # Extract all terms
+  all_terms <- vars
+  
+  # Find interaction terms
+  interactions <- grep(":", vars, value = TRUE)
+  
+  if(length(interactions) > 0) {
+    # For each interaction, extract main effects
+    for(int in interactions) {
+      main_effects <- strsplit(int, ":")[[1]]
+      # Add main effects if not already present
+      all_terms <- unique(c(all_terms, main_effects))
+    }
+  }
+  
+  return(all_terms)
+}
 ```
 
 ------------------------------------------------------------------------
@@ -168,13 +194,17 @@ Best subset selection identified a 6-variable model as optimal based on the BIC 
 ## 2.3 Build Best Model Formula
 
 ```{r mean_formula}
-#create formula to load
-formula_mean_best <- as.formula(paste("log_mean ~", paste(best_vars, collapse = " + ")))
-cat("best model formula:\n")
+# Enforce hierarchy principle
+best_vars_hier <- enforce_hierarchy(best_vars)
+cat("Variables after enforcing hierarchy:", paste(best_vars_hier, collapse = ", "), "\n\n")
+
+# Create formula
+formula_mean_best <- as.formula(paste("log_mean ~", paste(best_vars_hier, collapse = " + ")))
+cat("Best model formula:\n")
 print(formula_mean_best)
 ```
 
-The 6 variables reported by best subset selection include dummy variables automatically created for the categorical predictor `Re`. Once these are collapsed back into the original factor, the final model consists of 4 unique predictors (`log_St`, `Re`, `Fr_invlogit`, and `Re:Fr_invlogit`).
+**Hierarchy Principle:** If an interaction term (e.g., `Re:Fr_invlogit`) is selected, the corresponding main effects (`Re`, `Fr_invlogit`) must also be included in the model. This ensures the model is interpretable and adheres to statistical best practices.
 
 ## 2.4 Compare OLS vs LASSO
 
@@ -200,23 +230,31 @@ cat("Non-zero coefficients:", sum(coef(lasso_mean, s = "lambda.min") != 0) - 1, 
 if(cv_ols_mean < cv_lasso_mean) {
   cat("FINAL MODEL: OLS on subset (lower CV RMSE)\n")
   final_model_mean <- lm_mean_best
+  ols_proxy_mean <- lm_mean_best  # For intervals
   use_lasso_mean <- FALSE
 } else {
   cat("FINAL MODEL: LASSO on full model (lower CV RMSE)\n")
   
-  # Two-stage approach: Use LASSO-selected variables in OLS for inference
+  # Two-stage approach:
+  # Stage 1: LASSO for predictions
+  # Stage 2: OLS on LASSO-selected vars for intervals (proxy)
+  
   # Extract non-zero coefficients from LASSO
   lasso_coefs <- coef(lasso_mean, s = "lambda.min")
   lasso_vars <- rownames(lasso_coefs)[lasso_coefs[,1] != 0][-1]  # Remove intercept
   
   cat("LASSO selected", length(lasso_vars), "variables:\n")
-  cat(paste(lasso_vars, collapse = ", "), "\n")
+  cat(paste(lasso_vars, collapse = ", "), "\n\n")
   
-  # Fit OLS on LASSO-selected variables for inference (confidence intervals)
-  formula_mean_lasso <- as.formula(paste("log_mean ~", paste(lasso_vars, collapse = " + ")))
-  lm_mean_lasso <- lm(formula_mean_lasso, data = train)
+  # Enforce hierarchy for OLS proxy
+  lasso_vars_hier <- enforce_hierarchy(lasso_vars)
+  cat("After enforcing hierarchy:", length(lasso_vars_hier), "variables\n")
   
-  final_model_mean <- lm_mean_lasso  # Use OLS on LASSO-selected vars
+  # Fit OLS on LASSO-selected variables (with hierarchy) for intervals
+  formula_mean_lasso_ols <- as.formula(paste("log_mean ~", paste(lasso_vars_hier, collapse = " + ")))
+  ols_proxy_mean <- lm(formula_mean_lasso_ols, data = train)
+  
+  final_model_mean <- lasso_mean  # LASSO for predictions
   use_lasso_mean <- TRUE
 }
 ```
@@ -260,9 +298,13 @@ cat("Variables:", paste(best_vars, collapse = ", "))
 ## 3.3 Build Best Model Formula
 
 ```{r var_formula}
-#formula
-formula_var_best <- as.formula(paste("log_variance ~", paste(best_vars, collapse = " + ")))
-cat("best model formula:\n")
+# Enforce hierarchy principle
+best_vars_hier <- enforce_hierarchy(best_vars)
+cat("Variables after enforcing hierarchy:", paste(best_vars_hier, collapse = ", "), "\n\n")
+
+# Create formula
+formula_var_best <- as.formula(paste("log_variance ~", paste(best_vars_hier, collapse = " + ")))
+cat("Best model formula:\n")
 print(formula_var_best)
 ```
 
@@ -290,22 +332,24 @@ cat("Non-zero coefficients:", sum(coef(lasso_var, s = "lambda.min") != 0) - 1, "
 if(cv_ols_var < cv_lasso_var) {
   cat("FINAL MODEL: OLS on subset (lower CV RMSE)\n")
   final_model_var <- lm_var_best
+  ols_proxy_var <- lm_var_best
   use_lasso_var <- FALSE
 } else {
   cat("FINAL MODEL: LASSO on full model (lower CV RMSE)\n")
   
-  # Two-stage approach: Use LASSO-selected variables in OLS for inference
   lasso_coefs <- coef(lasso_var, s = "lambda.min")
-  lasso_vars <- rownames(lasso_coefs)[lasso_coefs[,1] != 0][-1]  # Remove intercept
+  lasso_vars <- rownames(lasso_coefs)[lasso_coefs[,1] != 0][-1]
   
   cat("LASSO selected", length(lasso_vars), "variables:\n")
-  cat(paste(lasso_vars, collapse = ", "), "\n")
+  cat(paste(lasso_vars, collapse = ", "), "\n\n")
   
-  # Fit OLS on LASSO-selected variables for inference
-  formula_var_lasso <- as.formula(paste("log_variance ~", paste(lasso_vars, collapse = " + ")))
-  lm_var_lasso <- lm(formula_var_lasso, data = train)
+  lasso_vars_hier <- enforce_hierarchy(lasso_vars)
+  cat("After enforcing hierarchy:", length(lasso_vars_hier), "variables\n")
   
-  final_model_var <- lm_var_lasso
+  formula_var_lasso_ols <- as.formula(paste("log_variance ~", paste(lasso_vars_hier, collapse = " + ")))
+  ols_proxy_var <- lm(formula_var_lasso_ols, data = train)
+  
+  final_model_var <- lasso_var
   use_lasso_var <- TRUE
 }
 ```
@@ -349,9 +393,13 @@ cat("Variables:", paste(best_vars, collapse = ", "))
 ## 4.3 Build Best Model Formula
 
 ```{r skew_formula}
-# Create formula for best model
-formula_skew_best <- as.formula(paste("log_skewness ~", paste(best_vars, collapse = " + ")))
-cat("best model formula:\n")
+# Enforce hierarchy principle
+best_vars_hier <- enforce_hierarchy(best_vars)
+cat("Variables after enforcing hierarchy:", paste(best_vars_hier, collapse = ", "), "\n\n")
+
+# Create formula
+formula_skew_best <- as.formula(paste("log_skewness ~", paste(best_vars_hier, collapse = " + ")))
+cat("Best model formula:\n")
 print(formula_skew_best)
 ```
 
@@ -379,22 +427,24 @@ cat("Non-zero coefficients:", sum(coef(lasso_skew, s = "lambda.min") != 0) - 1, 
 if(cv_ols_skew < cv_lasso_skew) {
   cat("FINAL MODEL: OLS on subset (lower CV RMSE)\n")
   final_model_skew <- lm_skew_best
+  ols_proxy_skew <- lm_skew_best
   use_lasso_skew <- FALSE
 } else {
   cat("FINAL MODEL: LASSO on full model (lower CV RMSE)\n")
   
-  # Two-stage approach: Use LASSO-selected variables in OLS for inference
   lasso_coefs <- coef(lasso_skew, s = "lambda.min")
-  lasso_vars <- rownames(lasso_coefs)[lasso_coefs[,1] != 0][-1]  # Remove intercept
+  lasso_vars <- rownames(lasso_coefs)[lasso_coefs[,1] != 0][-1]
   
   cat("LASSO selected", length(lasso_vars), "variables:\n")
-  cat(paste(lasso_vars, collapse = ", "), "\n")
+  cat(paste(lasso_vars, collapse = ", "), "\n\n")
   
-  # Fit OLS on LASSO-selected variables for inference
-  formula_skew_lasso <- as.formula(paste("log_skewness ~", paste(lasso_vars, collapse = " + ")))
-  lm_skew_lasso <- lm(formula_skew_lasso, data = train)
+  lasso_vars_hier <- enforce_hierarchy(lasso_vars)
+  cat("After enforcing hierarchy:", length(lasso_vars_hier), "variables\n")
   
-  final_model_skew <- lm_skew_lasso
+  formula_skew_lasso_ols <- as.formula(paste("log_skewness ~", paste(lasso_vars_hier, collapse = " + ")))
+  ols_proxy_skew <- lm(formula_skew_lasso_ols, data = train)
+  
+  final_model_skew <- lasso_skew
   use_lasso_skew <- TRUE
 }
 ```
@@ -437,9 +487,13 @@ cat("Variables:", paste(best_vars, collapse = ", "))
 ## 5.3 Build Best Model Formula
 
 ```{r kurt_formula}
-# formula
-formula_kurt_best <- as.formula(paste("log_kurtosis ~", paste(best_vars, collapse = " + ")))
-cat("best model formula:\n")
+# Enforce hierarchy principle
+best_vars_hier <- enforce_hierarchy(best_vars)
+cat("Variables after enforcing hierarchy:", paste(best_vars_hier, collapse = ", "), "\n\n")
+
+# Create formula
+formula_kurt_best <- as.formula(paste("log_kurtosis ~", paste(best_vars_hier, collapse = " + ")))
+cat("Best model formula:\n")
 print(formula_kurt_best)
 ```
 
@@ -467,22 +521,24 @@ cat("Non-zero coefficients:", sum(coef(lasso_kurt, s = "lambda.min") != 0) - 1, 
 if(cv_ols_kurt < cv_lasso_kurt) {
   cat("FINAL MODEL: OLS on subset (lower CV RMSE)\n")
   final_model_kurt <- lm_kurt_best
+  ols_proxy_kurt <- lm_kurt_best
   use_lasso_kurt <- FALSE
 } else {
   cat("FINAL MODEL: LASSO on full model (lower CV RMSE)\n")
   
-  # Two-stage approach: Use LASSO-selected variables in OLS for inference
   lasso_coefs <- coef(lasso_kurt, s = "lambda.min")
-  lasso_vars <- rownames(lasso_coefs)[lasso_coefs[,1] != 0][-1]  # Remove intercept
+  lasso_vars <- rownames(lasso_coefs)[lasso_coefs[,1] != 0][-1]
   
   cat("LASSO selected", length(lasso_vars), "variables:\n")
-  cat(paste(lasso_vars, collapse = ", "), "\n")
+  cat(paste(lasso_vars, collapse = ", "), "\n\n")
   
-  # Fit OLS on LASSO-selected variables for inference
-  formula_kurt_lasso <- as.formula(paste("log_kurtosis ~", paste(lasso_vars, collapse = " + ")))
-  lm_kurt_lasso <- lm(formula_kurt_lasso, data = train)
+  lasso_vars_hier <- enforce_hierarchy(lasso_vars)
+  cat("After enforcing hierarchy:", length(lasso_vars_hier), "variables\n")
   
-  final_model_kurt <- lm_kurt_lasso
+  formula_kurt_lasso_ols <- as.formula(paste("log_kurtosis ~", paste(lasso_vars_hier, collapse = " + ")))
+  ols_proxy_kurt <- lm(formula_kurt_lasso_ols, data = train)
+  
+  final_model_kurt <- lasso_kurt
   use_lasso_kurt <- TRUE
 }
 ```
@@ -502,8 +558,6 @@ plot(lm_skew_best, which = 1, main = "Skewness: Residuals vs Fitted")
 plot(lm_kurt_best, which = 1, main = "Kurtosis: Residuals vs Fitted")
 ```
 
-The residual plot shows that the mean model satisfies key assumptions: residuals are centered around zero with no strong patterns, indicating a good linear fit. In contrast, the residual plots for variance, skewness, and kurtosis show clear curvature and changing spread, suggesting nonlinear relationships and heteroskedasticity. These patterns indicate that the current linear models may be misspecified and that additional transformations or nonlinear modeling approaches may be needed to improve performance for higher-order distribution statistics.
-
 ## 6.2 Q-Q Plots
 
 ```{r diagnostics_qq, fig.height=8, fig.width=10}
@@ -515,9 +569,6 @@ plot(lm_skew_best, which = 2, main = "Skewness: Q-Q Plot")
 plot(lm_kurt_best, which = 2, main = "Kurtosis: Q-Q Plot")
 ```
 
-The Q–Q plot for the mean model shows residuals close to normal, indicating the linear regression assumptions are well met. In contrast, the variance, skewness, and kurtosis models show substantial departures from normality, particularly in the tails, suggesting that these models may require more complex approaches to better capture the data patterns at the tails. (Same analysis as with residual plots)
-
-------------------------------------------------------------------------
 
 # 7. Test Set Predictions
 
@@ -540,13 +591,44 @@ test <- test %>%
 ## 7.2 Generate Predictions
 
 ```{r test_predict}
-# Generate predictions using final models (all are OLS models)
-# Note: When LASSO was selected, final_model uses OLS on LASSO-selected variables
+# Generate predictions from selected models
+# Two-stage: LASSO predictions (if selected), OLS proxy for intervals
 
-pred_mean_log <- predict(final_model_mean, newdata = test)
-pred_var_log <- predict(final_model_var, newdata = test)
-pred_skew_log <- predict(final_model_skew, newdata = test)
-pred_kurt_log <- predict(final_model_kurt, newdata = test)
+# Mean predictions
+if(use_lasso_mean) {
+  test_temp <- test %>% mutate(log_mean = 0)
+  X_test_mean <- model.matrix(formula_mean_full, data = test_temp)[, -1]
+  pred_mean_log <- predict(final_model_mean, newx = X_test_mean, s = "lambda.min")[,1]
+} else {
+  pred_mean_log <- predict(final_model_mean, newdata = test)
+}
+
+# Variance predictions
+if(use_lasso_var) {
+  test_temp <- test %>% mutate(log_variance = 0)
+  X_test_var <- model.matrix(formula_var_full, data = test_temp)[, -1]
+  pred_var_log <- predict(final_model_var, newx = X_test_var, s = "lambda.min")[,1]
+} else {
+  pred_var_log <- predict(final_model_var, newdata = test)
+}
+
+# Skewness predictions
+if(use_lasso_skew) {
+  test_temp <- test %>% mutate(log_skewness = 0)
+  X_test_skew <- model.matrix(formula_skew_full, data = test_temp)[, -1]
+  pred_skew_log <- predict(final_model_skew, newx = X_test_skew, s = "lambda.min")[,1]
+} else {
+  pred_skew_log <- predict(final_model_skew, newdata = test)
+}
+
+# Kurtosis predictions
+if(use_lasso_kurt) {
+  test_temp <- test %>% mutate(log_kurtosis = 0)
+  X_test_kurt <- model.matrix(formula_kurt_full, data = test_temp)[, -1]
+  pred_kurt_log <- predict(final_model_kurt, newx = X_test_kurt, s = "lambda.min")[,1]
+} else {
+  pred_kurt_log <- predict(final_model_kurt, newdata = test)
+}
 
 # Combine and back-transform from log scale
 test_predictions <- test %>%
@@ -563,101 +645,84 @@ cat("First 10 predictions:\n")
 print(test_predictions[1:10, ])
 ```
 
-## 7.3 Confidence Intervals for Predictions
+## 7.3 Prediction Intervals
 
-**Note:** Since Re only has 3 observed values (90, 224, 398) but is treated as continuous, there is substantial uncertainty in the relationship between Re and cluster statistics. Confidence intervals quantify this uncertainty.
+**Note:** Since Re only has 3 observed values (90, 224, 398) but is treated as continuous, there is substantial uncertainty in the relationship between Re and cluster statistics. Prediction intervals quantify this uncertainty for new observations.
 
-```{r confidence_intervals}
-# Generate 95% confidence intervals
-# Two-stage approach: All final models are OLS (either from subset or LASSO-selected vars)
+**Two-Stage Approach:** When LASSO is selected, prediction intervals come from OLS fitted on LASSO-selected variables (the OLS proxy), ensuring valid interval estimates.
 
-# Mean model CIs
-pred_mean_ci <- predict(final_model_mean, newdata = test, interval = "confidence", level = 0.95)
-pred_mean_pi <- predict(final_model_mean, newdata = test, interval = "prediction", level = 0.95)
+```{r prediction_intervals}
+# Generate 95% prediction intervals using OLS proxy models
+# Prediction intervals capture both model uncertainty and random noise
+
+# Mean model PIs
+pred_mean_pi <- predict(ols_proxy_mean, newdata = test, interval = "prediction", level = 0.95)
 
 mean_intervals <- test %>%
   select(St, Re, Fr) %>%
   mutate(
-    pred = exp(pred_mean_ci[, "fit"]),
-    ci_lower = exp(pred_mean_ci[, "lwr"]),
-    ci_upper = exp(pred_mean_ci[, "upr"]),
+    pred = exp(pred_mean_log),
     pi_lower = exp(pred_mean_pi[, "lwr"]),
     pi_upper = exp(pred_mean_pi[, "upr"]),
-    ci_width = ci_upper - ci_lower,
     pi_width = pi_upper - pi_lower
   )
 
 cat("=== MEAN MODEL ===\n")
-cat("Average 95% CI width:", round(mean(mean_intervals$ci_width), 4), "\n")
 cat("Average 95% PI width:", round(mean(mean_intervals$pi_width), 4), "\n\n")
 cat("First 5 predictions with intervals:\n")
 print(head(mean_intervals, 5))
 
-# Variance model CIs
-pred_var_ci <- predict(final_model_var, newdata = test, interval = "confidence", level = 0.95)
-pred_var_pi <- predict(final_model_var, newdata = test, interval = "prediction", level = 0.95)
+# Variance model PIs
+pred_var_pi <- predict(ols_proxy_var, newdata = test, interval = "prediction", level = 0.95)
 
 var_intervals <- test %>%
   select(St, Re, Fr) %>%
   mutate(
-    pred = exp(pred_var_ci[, "fit"]),
-    ci_lower = exp(pred_var_ci[, "lwr"]),
-    ci_upper = exp(pred_var_ci[, "upr"]),
+    pred = exp(pred_var_log),
     pi_lower = exp(pred_var_pi[, "lwr"]),
     pi_upper = exp(pred_var_pi[, "upr"]),
-    ci_width = ci_upper - ci_lower,
     pi_width = pi_upper - pi_lower
   )
 
 cat("\n=== VARIANCE MODEL ===\n")
-cat("Average 95% CI width:", round(mean(var_intervals$ci_width), 4), "\n")
 cat("Average 95% PI width:", round(mean(var_intervals$pi_width), 4), "\n")
 
-# Skewness model CIs
-pred_skew_ci <- predict(final_model_skew, newdata = test, interval = "confidence", level = 0.95)
-pred_skew_pi <- predict(final_model_skew, newdata = test, interval = "prediction", level = 0.95)
+# Skewness model PIs
+pred_skew_pi <- predict(ols_proxy_skew, newdata = test, interval = "prediction", level = 0.95)
 
 skew_intervals <- test %>%
   select(St, Re, Fr) %>%
   mutate(
-    pred = exp(pred_skew_ci[, "fit"]),
-    ci_lower = exp(pred_skew_ci[, "lwr"]),
-    ci_upper = exp(pred_skew_ci[, "upr"]),
+    pred = exp(pred_skew_log),
     pi_lower = exp(pred_skew_pi[, "lwr"]),
     pi_upper = exp(pred_skew_pi[, "upr"]),
-    ci_width = ci_upper - ci_lower,
     pi_width = pi_upper - pi_lower
   )
 
 cat("\n=== SKEWNESS MODEL ===\n")
-cat("Average 95% CI width:", round(mean(skew_intervals$ci_width), 4), "\n")
 cat("Average 95% PI width:", round(mean(skew_intervals$pi_width), 4), "\n")
 
-# Kurtosis model CIs
-pred_kurt_ci <- predict(final_model_kurt, newdata = test, interval = "confidence", level = 0.95)
-pred_kurt_pi <- predict(final_model_kurt, newdata = test, interval = "prediction", level = 0.95)
+# Kurtosis model PIs
+pred_kurt_pi <- predict(ols_proxy_kurt, newdata = test, interval = "prediction", level = 0.95)
 
 kurt_intervals <- test %>%
   select(St, Re, Fr) %>%
   mutate(
-    pred = exp(pred_kurt_ci[, "fit"]),
-    ci_lower = exp(pred_kurt_ci[, "lwr"]),
-    ci_upper = exp(pred_kurt_ci[, "upr"]),
+    pred = exp(pred_kurt_log),
     pi_lower = exp(pred_kurt_pi[, "lwr"]),
     pi_upper = exp(pred_kurt_pi[, "upr"]),
-    ci_width = ci_upper - ci_lower,
     pi_width = pi_upper - pi_lower
   )
 
 cat("\n=== KURTOSIS MODEL ===\n")
-cat("Average 95% CI width:", round(mean(kurt_intervals$ci_width), 4), "\n")
 cat("Average 95% PI width:", round(mean(kurt_intervals$pi_width), 4), "\n")
 
 cat("\n** Interpretation **\n")
-cat("- Confidence Interval (CI): Uncertainty in the mean prediction\n")
-cat("- Prediction Interval (PI): Uncertainty for a new observation (wider)\n")
+cat("- Prediction Interval (PI): Uncertainty for a new observation\n")
+cat("- PIs capture both fitted model uncertainty AND random noise\n")
 cat("- Wide intervals expected since only 3 observed Re values\n")
-cat("- When LASSO was selected, CIs come from OLS on LASSO-selected variables\n")
+cat("- When LASSO was selected, PIs come from OLS proxy on LASSO-selected variables\n")
+cat("- Predictions themselves come from LASSO (Stage 1), intervals from OLS proxy (Stage 2)\n")
 ```
 
 ## 7.4 Save Predictions
