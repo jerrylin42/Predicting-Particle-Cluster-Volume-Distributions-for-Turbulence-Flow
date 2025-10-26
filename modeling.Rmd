@@ -764,6 +764,14 @@ coefs_mat[ coefs_mat != 0 , , drop = FALSE ]
 coefs_mat
 ```
 
+```{r}
+yhat_train <- as.vector(predict(lasso_kurt, s = bestlam_kurt, newx = X_kurt_full))
+SSE_tr <- sum((y_kurt - yhat_train)^2)
+SST_tr <- sum((y_kurt - mean(y_kurt))^2)
+R2_train_lasso <- 1 - SSE_tr / SST_tr
+R2_train_lasso
+```
+
 # 8.5 Cross-Validation RMSE Comparison
 
 ```{r cv_summary}
@@ -781,6 +789,8 @@ cv_results %>%
     CV_Diff = abs(OLS_CV_RMSE - LASSO_CV_RMSE)
   )
 ```
+
+## CV RMSE With GAM
 
 ```{r}
 cv_gam_mean  <- cv_rmse_gam(train, formula_mean_best,   k = 10)
