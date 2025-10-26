@@ -213,6 +213,23 @@ if(cv_ols_mean < cv_lasso_mean) {
 
 The comparison shows which variable selection approach performs better: explicit subset selection via AIC (OLS) versus regularization-based automatic selection (LASSO). When LASSO is selected, we use a two-stage approach: LASSO identifies important variables, then we fit OLS on those selected variables to obtain valid prediction intervals.
 
+## 2.6 GAM
+
+```{r}
+gam_mean <- gam(
+  log_mean ~
+    s(log_St, k = 10) +           
+    s(Re, k = 3) +                
+    s(Fr_invlogit, k = 3) +       
+    Re:Fr_invlogit,               
+  data = train,
+  method = "REML",
+  select = TRUE
+)
+
+summary(gam_mean)
+```
+
 # 3. Model 2: VARIANCE
 
 ## 3.1 Fit Full Model
@@ -300,6 +317,27 @@ if(cv_ols_var < cv_lasso_var) {
 
 ------------------------------------------------------------------------
 
+## 3.6 GAM
+
+```{r}
+library(mgcv)
+
+gam_variance <- gam(
+  log_variance ~
+    s(log_St, k = 10) +           
+    s(Re, k = 3) +                
+    s(Fr_invlogit, k = 3) +       
+    Re:Fr_invlogit,               
+  data = train,
+  method = "REML",
+  select = TRUE
+)
+
+summary(gam_variance)
+
+
+```
+
 # 4. Model 3: SKEWNESS
 
 ## 4.1 Fit Full Model
@@ -383,6 +421,22 @@ if(cv_ols_skew < cv_lasso_skew) {
   final_model_skew <- lasso_skew
   use_lasso_skew <- TRUE
 }
+```
+
+## 4.6 GAM
+
+```{r}
+gam_skewness <- gam(
+  log_skewness ~
+    s(Re, k = 3) +                
+    s(Fr_invlogit, k = 3) +       
+    Re:Fr_invlogit,               
+  data = train,
+  method = "REML",
+  select = TRUE
+)
+
+summary(gam_skewness)
 ```
 
 ------------------------------------------------------------------------
@@ -472,6 +526,25 @@ if(cv_ols_kurt < cv_lasso_kurt) {
 }
 ```
 
+## 5.6 GAM
+
+```{r}
+
+gam_kurtosis <- gam(
+  log_kurtosis ~
+    s(log_St, k = 10) +           
+    s(Fr_invlogit, k = 3) +       
+    Re:Fr_invlogit +
+    log_St:Re,               
+  data = train,
+  method = "REML",
+  select = TRUE
+)
+
+summary(gam_kurtosis)
+
+```
+
 ------------------------------------------------------------------------
 
 # 6. Model Diagnostics
@@ -497,7 +570,6 @@ plot(lm_var_best, which = 2, main = "Variance: Q-Q Plot")
 plot(lm_skew_best, which = 2, main = "Skewness: Q-Q Plot")
 plot(lm_kurt_best, which = 2, main = "Kurtosis: Q-Q Plot")
 ```
-
 
 # 7. Test Set Predictions
 
@@ -564,6 +636,33 @@ test_predictions <- test %>%
   select(St, Re, Fr, pred_mean, pred_variance, pred_skewness, pred_kurtosis)
 
 head(test_predictions, 10)
+```
+
+```{r}
+# --- GAM-only predictions ---
+
+# Predict on test set using GAM models
+pred_gam_mean <- predict(gam_mean, newdata = test, type = "response")
+pred_gam_var  <- predict(gam_variance, newdata = test, type = "response")
+pred_gam_skew <- predict(gam_skewness, newdata = test, type = "response")
+pred_gam_kurt <- predict(gam_kurtosis, newdata = test, type = "response")
+
+# Back-transform (assuming predictions are on log scale)
+test_predictions_gam <- test %>%
+  mutate(
+    pred_mean = exp(pred_gam_mean),
+    pred_variance = exp(pred_gam_var),
+    pred_skewness = exp(pred_gam_skew),
+    pred_kurtosis = exp(pred_gam_kurt)
+  ) %>%
+  select(St, Re, Fr, pred_mean, pred_variance, pred_skewness, pred_kurtosis)
+
+# Save as second CSV
+write.csv(test_predictions_gam, "test_predictions_gam_only.csv", row.names = FALSE)
+
+# Optional: preview
+head(test_predictions_gam, 10)
+
 ```
 
 ## 7.3 Prediction Intervals
@@ -658,11 +757,17 @@ summary(final_model_skew)
 
 ```{r summary_kurt}
 summary(final_model_kurt)
+coefs_sparse <- coef(lasso_kurt, s = bestlam_kurt)
+
+coefs_mat <- as.matrix(coefs_sparse)
+coefs_mat[ coefs_mat != 0 , , drop = FALSE ]
+coefs_mat
 ```
 
 # 8.5 Cross-Validation RMSE Comparison
 
 ```{r cv_summary}
+cv_rmse(train, formula_mean_best, k = 10)
 cv_results <- data.frame(
   Response = c("Mean", "Variance", "Skewness", "Kurtosis"),
   OLS_CV_RMSE = c(cv_ols_mean, cv_ols_var, cv_ols_skew, cv_ols_kurt),
@@ -677,6 +782,37 @@ cv_results %>%
   )
 ```
 
+```{r}
+cv_gam_mean  <- cv_rmse_gam(train, formula_mean_best,   k = 10)
+cv_gam_var   <- cv_rmse_gam(train, formula_var_best,    k = 10)
+cv_gam_skew  <- cv_rmse_gam(train, formula_skew_best,   k = 10)
+cv_gam_kurt  <- cv_rmse_gam(train, formula_kurt_best,   k = 10)
+
+# Now assemble cv_results including GAM (assuming you already have cv_ols_* and cv_lasso_* variables)
+cv_results <- data.frame(
+  Response = c("Mean", "Variance", "Skewness", "Kurtosis"),
+  OLS_CV_RMSE   = c(cv_ols_mean, cv_ols_var, cv_ols_skew, cv_ols_kurt),
+  LASSO_CV_RMSE = c(cv_lasso_mean, cv_lasso_var, cv_lasso_skew, cv_lasso_kurt),
+  GAM_CV_RMSE   = c(cv_gam_mean, cv_gam_var, cv_gam_skew, cv_gam_kurt)
+) %>%
+  rowwise() %>%
+  mutate(
+    Best_Method = case_when(
+      GAM_CV_RMSE < pmin(OLS_CV_RMSE, LASSO_CV_RMSE) ~ "GAM",
+      OLS_CV_RMSE < LASSO_CV_RMSE                         ~ "OLS",
+      TRUE                                                ~ "LASSO"
+    ),
+    Best_RMSE = pmin(GAM_CV_RMSE, OLS_CV_RMSE, LASSO_CV_RMSE),
+    # CV_Diff = difference between best and the second-best (how much margin the winner has)
+    CV_sorted = list(sort(c(OLS_CV_RMSE, LASSO_CV_RMSE, GAM_CV_RMSE))),
+    CV_Diff = CV_sorted[[1]][2] - CV_sorted[[1]][1]
+  ) %>%
+  ungroup() %>%
+  select(-CV_sorted)
+
+print(cv_results)
+```
+
 The CV RMSE difference between OLS and LASSO shows how much regularization helps (or hurts) for each response. Small differences suggest both methods work similarly well, while larger differences indicate one method is clearly better at handling the bias-variance tradeoff for that particular response.
 
 ------------------------------------------------------------------------
@@ -685,18 +821,18 @@ The CV RMSE difference between OLS and LASSO shows how much regularization helps
 
 ## For Model Interpretation:
 
-1. **Model Summaries**: Check R², F-statistic, individual coefficient p-values and standard errors
-2. **Residual Diagnostics**: Q-Q plots show normality assumption; residual plots show homoscedasticity
-3. **Coefficient Interpretation**: 
-   - On log scale: 1 unit increase in predictor → multiplicative effect on response
-   - Back-transform: Interpret as % change in original scale
-   - Interaction effects: How combined predictor effects differ from additive
-4. **Variable Selection**: Which predictors were selected? Do they make physical sense?
-5. **Prediction Uncertainty**: Are prediction intervals narrow enough to be useful?
+1.  **Model Summaries**: Check R², F-statistic, individual coefficient p-values and standard errors
+2.  **Residual Diagnostics**: Q-Q plots show normality assumption; residual plots show homoscedasticity
+3.  **Coefficient Interpretation**:
+    -   On log scale: 1 unit increase in predictor → multiplicative effect on response
+    -   Back-transform: Interpret as % change in original scale
+    -   Interaction effects: How combined predictor effects differ from additive
+4.  **Variable Selection**: Which predictors were selected? Do they make physical sense?
+5.  **Prediction Uncertainty**: Are prediction intervals narrow enough to be useful?
 
 ## Physical Interpretation to Consider:
 
-- **Re** (Reynolds number): Turbulence intensity - how does turbulence affect clustering?
-- **Fr** (Froude number): Gravity vs inertia - when does gravity matter for cluster formation?
-- **St** (Stokes number): Particle inertia - do heavier particles cluster differently?
-- **Interactions**: Do particle effects depend on turbulence conditions?
+-   **Re** (Reynolds number): Turbulence intensity - how does turbulence affect clustering?
+-   **Fr** (Froude number): Gravity vs inertia - when does gravity matter for cluster formation?
+-   **St** (Stokes number): Particle inertia - do heavier particles cluster differently?
+-   **Interactions**: Do particle effects depend on turbulence conditions?
