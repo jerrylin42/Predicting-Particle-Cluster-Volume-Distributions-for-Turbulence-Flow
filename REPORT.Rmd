@@ -38,4 +38,52 @@ summary(linear_model)
 
 # Results
 
+## 3. Interpretation of the Skewness Model
+
+The final skewness model that was selected was:
+
+$$
+\log(\text{skewness}) \sim Fr_{\text{invlogit}} + Re + Re:Fr_{\text{invlogit}}
+$$
+
+This model explains approximately **55%** of the variation in log-skewness ($R^2 = 0.55$), suggesting a moderate fit that captures key physical trends while leaving room for turbulence-driven variability.\
+Residual and Q–Q plots indicate approximate normality with some heteroscedasticity—reasonable given that skewness (a third-order statistic) tends to fluctuate strongly with turbulence intensity.
+
+------------------------------------------------------------------------
+
+### **Coefficient Interpretation**
+
+Three predictors were retained: **Froude number (**$Fr_{\text{invlogit}}$), **Reynolds number (**$Re$), and their **interaction (**$Re \times Fr_{\text{invlogit}}$).
+
+-   **Froude number (**$Fr_{\text{invlogit}}$):\
+    As $Fr$ increases (weaker gravity effects), skewness decreases, meaning particle cluster distributions become more symmetric.\
+    When gravity dominates (low $Fr$), particles settle downward, forming more elongated and right-skewed clusters.
+
+-   **Reynolds number (**$Re$):\
+    Higher turbulence (larger $Re$) reduces skewness, as intense mixing disrupts organized, gravity-driven cluster structures.\
+    Low $Re$ flows allow coherent formations that increase asymmetry.
+
+-   **Interaction (**$Re \times Fr_{\text{invlogit}}$):\
+    The impact of gravity depends on turbulence intensity.\
+    At low $Re$, gravity strongly drives asymmetric clustering, but at high $Re$, turbulence disperses particles enough to weaken this effect.
+
+Because the model operates on $\log(\text{skewness})$, all effects are **multiplicative** on the original scale.\
+For instance, a coefficient of $+0.3$ corresponds to a $\approx 35\%$ increase in actual skewness ($e^{0.3} \approx 1.35$).
+
+### **Model Selection**
+
+Cross-validation favored **LASSO** over **OLS** by a narrow margin (CV RMSE: 0.779 vs. 0.784), reflecting a slight reduction in variance without significant bias increase.\
+The near-identical errors indicate that both models capture similar structure, but **LASSO’s regularization** improves stability for this noisy, higher-moment response.
+
+### **Prediction Intervals and Scientific Meaning**
+
+The **95% prediction intervals** are wide, primarily due to limited Reynolds number levels (90, 224, 398) and stochastic variation in turbulence.\
+Still, the model provides physically meaningful directional trends:
+
+-   **High** $Re$: reduces skewness through enhanced turbulent mixing.
+-   **Low** $Fr$: increases skewness via stronger gravitational clustering.
+-   $St$ (Stokes number): excluded from selection, suggesting particle inertia adds minimal explanatory power once $Re$ and $Fr$ are accounted for.
+
+Overall, the model shows that **turbulence homogenizes particle distributions**, while **gravity induces asymmetry**. Although uncertainty is substantial, the observed relationships align with theoretical expectations for particle clustering in turbulent flow environments.
+
 # Conclusions
