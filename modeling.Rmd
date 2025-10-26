@@ -638,6 +638,8 @@ test_predictions <- test %>%
 head(test_predictions, 10)
 ```
 
+## GAM Predictions
+
 ```{r}
 # --- GAM-only predictions ---
 
@@ -721,6 +723,64 @@ cat("Mean:", mean(mean_intervals$pi_width), "\n")
 cat("Variance:", mean(var_intervals$pi_width), "\n")
 cat("Skewness:", mean(skew_intervals$pi_width), "\n")
 cat("Kurtosis:", mean(kurt_intervals$pi_width), "\n")
+```
+
+## GAM Widths
+
+```{r}
+
+z <- qnorm(0.975)
+
+# Mean
+pred_mean_gam <- predict(gam_mean, newdata = test, se.fit = TRUE, type = "link")
+sigma_mean <- sqrt(mean(residuals(gam_mean)^2))
+pred_mean_pi <- test %>%
+  mutate(
+    fit = exp(pred_mean_gam$fit),
+    pi_lower = exp(pred_mean_gam$fit - z * sqrt(pred_mean_gam$se.fit^2 + sigma_mean^2)),
+    pi_upper = exp(pred_mean_gam$fit + z * sqrt(pred_mean_gam$se.fit^2 + sigma_mean^2)),
+    pi_width = pi_upper - pi_lower
+  )
+
+# Variance
+pred_var_gam <- predict(gam_variance, newdata = test, se.fit = TRUE, type = "link")
+sigma_var <- sqrt(mean(residuals(gam_variance)^2))
+pred_var_pi <- test %>%
+  mutate(
+    fit = exp(pred_var_gam$fit),
+    pi_lower = exp(pred_var_gam$fit - z * sqrt(pred_var_gam$se.fit^2 + sigma_var^2)),
+    pi_upper = exp(pred_var_gam$fit + z * sqrt(pred_var_gam$se.fit^2 + sigma_var^2)),
+    pi_width = pi_upper - pi_lower
+  )
+
+# Skewness
+pred_skew_gam <- predict(gam_skewness, newdata = test, se.fit = TRUE, type = "link")
+sigma_skew <- sqrt(mean(residuals(gam_skewness)^2))
+pred_skew_pi <- test %>%
+  mutate(
+    fit = exp(pred_skew_gam$fit),
+    pi_lower = exp(pred_skew_gam$fit - z * sqrt(pred_skew_gam$se.fit^2 + sigma_skew^2)),
+    pi_upper = exp(pred_skew_gam$fit + z * sqrt(pred_skew_gam$se.fit^2 + sigma_skew^2)),
+    pi_width = pi_upper - pi_lower
+  )
+
+# Kurtosis
+pred_kurt_gam <- predict(gam_kurtosis, newdata = test, se.fit = TRUE, type = "link")
+sigma_kurt <- sqrt(mean(residuals(gam_kurtosis)^2))
+pred_kurt_pi <- test %>%
+  mutate(
+    fit = exp(pred_kurt_gam$fit),
+    pi_lower = exp(pred_kurt_gam$fit - z * sqrt(pred_kurt_gam$se.fit^2 + sigma_kurt^2)),
+    pi_upper = exp(pred_kurt_gam$fit + z * sqrt(pred_kurt_gam$se.fit^2 + sigma_kurt^2)),
+    pi_width = pi_upper - pi_lower
+  )
+
+cat("Average 95% PI widths (GAM models):\n")
+cat("Mean:", mean(pred_mean_pi$pi_width), "\n")
+cat("Variance:", mean(pred_var_pi$pi_width), "\n")
+cat("Skewness:", mean(pred_skew_pi$pi_width), "\n")
+cat("Kurtosis:", mean(pred_kurt_pi$pi_width), "\n")
+
 ```
 
 Prediction intervals capture both model uncertainty and random noise. Wide intervals are expected given the limited Re values and extrapolation involved.
