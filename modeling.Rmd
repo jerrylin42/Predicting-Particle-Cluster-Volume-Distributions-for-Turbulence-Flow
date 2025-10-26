@@ -213,21 +213,24 @@ if(cv_ols_mean < cv_lasso_mean) {
 
 The comparison shows which variable selection approach performs better: explicit subset selection via AIC (OLS) versus regularization-based automatic selection (LASSO). When LASSO is selected, we use a two-stage approach: LASSO identifies important variables, then we fit OLS on those selected variables to obtain valid prediction intervals.
 
-## 2.6 GAM
+## 2.6 GAM (Optional - Commented Out)
 
-```{r}
-gam_mean <- gam(
-  log_mean ~
-    s(log_St, k = 10) +           
-    s(Re, k = 3) +                
-    s(Fr_invlogit, k = 3) +       
-    Re:Fr_invlogit,               
-  data = train,
-  method = "REML",
-  select = TRUE
-)
-
-summary(gam_mean)
+```{r eval=FALSE}
+# Uncomment if you want to explore GAM models
+# library(mgcv)
+# 
+# gam_mean <- gam(
+#   log_mean ~
+#     s(log_St, k = 10) +           
+#     s(Re, k = 3) +                
+#     s(Fr_invlogit, k = 3) +       
+#     Re:Fr_invlogit,               
+#   data = train,
+#   method = "REML",
+#   select = TRUE
+# )
+# 
+# summary(gam_mean)
 ```
 
 # 3. Model 2: VARIANCE
@@ -315,27 +318,38 @@ if(cv_ols_var < cv_lasso_var) {
 }
 ```
 
+### Diagnostic Plots for Variance Model
+
+```{r var_diagnostics, fig.height=4, fig.width=8}
+par(mfrow = c(1, 2))
+
+# Residuals vs Fitted
+plot(ols_proxy_var, which = 1, main = "Variance: Residuals vs Fitted")
+
+# Q-Q Plot
+plot(ols_proxy_var, which = 2, main = "Variance: Q-Q Plot")
+```
+
 ------------------------------------------------------------------------
 
-## 3.6 GAM
+## 3.6 GAM (Optional - Commented Out)
 
-```{r}
-library(mgcv)
-
-gam_variance <- gam(
-  log_variance ~
-    s(log_St, k = 10) +           
-    s(Re, k = 3) +                
-    s(Fr_invlogit, k = 3) +       
-    Re:Fr_invlogit,               
-  data = train,
-  method = "REML",
-  select = TRUE
-)
-
-summary(gam_variance)
-
-
+```{r eval=FALSE}
+# Uncomment if you want to explore GAM models
+# library(mgcv)
+# 
+# gam_variance <- gam(
+#   log_variance ~
+#     s(log_St, k = 10) +           
+#     s(Re, k = 3) +                
+#     s(Fr_invlogit, k = 3) +       
+#     Re:Fr_invlogit,               
+#   data = train,
+#   method = "REML",
+#   select = TRUE
+# )
+# 
+# summary(gam_variance)
 ```
 
 # 4. Model 3: SKEWNESS
@@ -423,20 +437,23 @@ if(cv_ols_skew < cv_lasso_skew) {
 }
 ```
 
-## 4.6 GAM
+## 4.6 GAM (Optional - Commented Out)
 
-```{r}
-gam_skewness <- gam(
-  log_skewness ~
-    s(Re, k = 3) +                
-    s(Fr_invlogit, k = 3) +       
-    Re:Fr_invlogit,               
-  data = train,
-  method = "REML",
-  select = TRUE
-)
-
-summary(gam_skewness)
+```{r eval=FALSE}
+# Uncomment if you want to explore GAM models
+# library(mgcv)
+# 
+# gam_skewness <- gam(
+#   log_skewness ~
+#     s(Re, k = 3) +                
+#     s(Fr_invlogit, k = 3) +       
+#     Re:Fr_invlogit,               
+#   data = train,
+#   method = "REML",
+#   select = TRUE
+# )
+# 
+# summary(gam_skewness)
 ```
 
 ------------------------------------------------------------------------
@@ -526,23 +543,24 @@ if(cv_ols_kurt < cv_lasso_kurt) {
 }
 ```
 
-## 5.6 GAM
+## 5.6 GAM (Optional - Commented Out)
 
-```{r}
-
-gam_kurtosis <- gam(
-  log_kurtosis ~
-    s(log_St, k = 10) +           
-    s(Fr_invlogit, k = 3) +       
-    Re:Fr_invlogit +
-    log_St:Re,               
-  data = train,
-  method = "REML",
-  select = TRUE
-)
-
-summary(gam_kurtosis)
-
+```{r eval=FALSE}
+# Uncomment if you want to explore GAM models
+# library(mgcv)
+# 
+# gam_kurtosis <- gam(
+#   log_kurtosis ~
+#     s(log_St, k = 10) +           
+#     s(Fr_invlogit, k = 3) +       
+#     Re:Fr_invlogit +
+#     log_St:Re,               
+#   data = train,
+#   method = "REML",
+#   select = TRUE
+# )
+# 
+# summary(gam_kurtosis)
 ```
 
 ------------------------------------------------------------------------
@@ -638,32 +656,6 @@ test_predictions <- test %>%
 head(test_predictions, 10)
 ```
 
-```{r}
-# --- GAM-only predictions ---
-
-# Predict on test set using GAM models
-pred_gam_mean <- predict(gam_mean, newdata = test, type = "response")
-pred_gam_var  <- predict(gam_variance, newdata = test, type = "response")
-pred_gam_skew <- predict(gam_skewness, newdata = test, type = "response")
-pred_gam_kurt <- predict(gam_kurtosis, newdata = test, type = "response")
-
-# Back-transform (assuming predictions are on log scale)
-test_predictions_gam <- test %>%
-  mutate(
-    pred_mean = exp(pred_gam_mean),
-    pred_variance = exp(pred_gam_var),
-    pred_skewness = exp(pred_gam_skew),
-    pred_kurtosis = exp(pred_gam_kurt)
-  ) %>%
-  select(St, Re, Fr, pred_mean, pred_variance, pred_skewness, pred_kurtosis)
-
-# Save as second CSV
-write.csv(test_predictions_gam, "test_predictions_gam_only.csv", row.names = FALSE)
-
-# Optional: preview
-head(test_predictions_gam, 10)
-
-```
 
 ## 7.3 Prediction Intervals
 
@@ -721,6 +713,18 @@ cat("Mean:", mean(mean_intervals$pi_width), "\n")
 cat("Variance:", mean(var_intervals$pi_width), "\n")
 cat("Skewness:", mean(skew_intervals$pi_width), "\n")
 cat("Kurtosis:", mean(kurt_intervals$pi_width), "\n")
+```
+
+```{r var_interval_metrics}
+# More robust interval metrics for variance model
+var_intervals <- var_intervals %>%
+  mutate(relative_width = (pi_upper - pi_lower) / pred * 100)
+
+cat("\n--- Variance Model Prediction Interval Metrics ---\n")
+cat("Median width:", median(var_intervals$pi_width), "\n")
+cat("IQR of widths:", IQR(var_intervals$pi_width), "\n")
+cat("Median relative width:", median(var_intervals$relative_width), "%\n")
+cat("Mean width (for comparison):", mean(var_intervals$pi_width), "\n")
 ```
 
 Prediction intervals capture both model uncertainty and random noise. Wide intervals are expected given the limited Re values and extrapolation involved.
@@ -790,37 +794,37 @@ cv_results %>%
   )
 ```
 
-## CV RMSE With GAM
+## CV RMSE With GAM (Optional - Commented Out)
 
-```{r}
-cv_gam_mean  <- cv_rmse_gam(train, formula_mean_best,   k = 10)
-cv_gam_var   <- cv_rmse_gam(train, formula_var_best,    k = 10)
-cv_gam_skew  <- cv_rmse_gam(train, formula_skew_best,   k = 10)
-cv_gam_kurt  <- cv_rmse_gam(train, formula_kurt_best,   k = 10)
-
-# Now assemble cv_results including GAM (assuming you already have cv_ols_* and cv_lasso_* variables)
-cv_results <- data.frame(
-  Response = c("Mean", "Variance", "Skewness", "Kurtosis"),
-  OLS_CV_RMSE   = c(cv_ols_mean, cv_ols_var, cv_ols_skew, cv_ols_kurt),
-  LASSO_CV_RMSE = c(cv_lasso_mean, cv_lasso_var, cv_lasso_skew, cv_lasso_kurt),
-  GAM_CV_RMSE   = c(cv_gam_mean, cv_gam_var, cv_gam_skew, cv_gam_kurt)
-) %>%
-  rowwise() %>%
-  mutate(
-    Best_Method = case_when(
-      GAM_CV_RMSE < pmin(OLS_CV_RMSE, LASSO_CV_RMSE) ~ "GAM",
-      OLS_CV_RMSE < LASSO_CV_RMSE                         ~ "OLS",
-      TRUE                                                ~ "LASSO"
-    ),
-    Best_RMSE = pmin(GAM_CV_RMSE, OLS_CV_RMSE, LASSO_CV_RMSE),
-    # CV_Diff = difference between best and the second-best (how much margin the winner has)
-    CV_sorted = list(sort(c(OLS_CV_RMSE, LASSO_CV_RMSE, GAM_CV_RMSE))),
-    CV_Diff = CV_sorted[[1]][2] - CV_sorted[[1]][1]
-  ) %>%
-  ungroup() %>%
-  select(-CV_sorted)
-
-print(cv_results)
+```{r eval=FALSE}
+# Uncomment if you want to compare with GAM models
+# cv_gam_mean  <- cv_rmse_gam(train, formula_mean_best,   k = 10)
+# cv_gam_var   <- cv_rmse_gam(train, formula_var_best,    k = 10)
+# cv_gam_skew  <- cv_rmse_gam(train, formula_skew_best,   k = 10)
+# cv_gam_kurt  <- cv_rmse_gam(train, formula_kurt_best,   k = 10)
+# 
+# cv_results <- data.frame(
+#   Response = c("Mean", "Variance", "Skewness", "Kurtosis"),
+#   OLS_CV_RMSE   = c(cv_ols_mean, cv_ols_var, cv_ols_skew, cv_ols_kurt),
+#   LASSO_CV_RMSE = c(cv_lasso_mean, cv_lasso_var, cv_lasso_skew, cv_lasso_kurt),
+#   GAM_CV_RMSE   = c(cv_gam_mean, cv_gam_var, cv_gam_skew, cv_gam_kurt)
+# ) %>%
+#   rowwise() %>%
+#   mutate(
+#     Best_Method = case_when(
+#       GAM_CV_RMSE < pmin(OLS_CV_RMSE, LASSO_CV_RMSE) ~ "GAM",
+#       OLS_CV_RMSE < LASSO_CV_RMSE                         ~ "OLS",
+#       TRUE                                                ~ "LASSO"
+#     ),
+#     Best_RMSE = pmin(GAM_CV_RMSE, OLS_CV_RMSE, LASSO_CV_RMSE),
+#     CV_Diff = difference between best and the second-best (how much margin the winner has)
+#     CV_sorted = list(sort(c(OLS_CV_RMSE, LASSO_CV_RMSE, GAM_CV_RMSE))),
+#     CV_Diff = CV_sorted[[1]][2] - CV_sorted[[1]][1]
+#   ) %>%
+#   ungroup() %>%
+#   select(-CV_sorted)
+# 
+# print(cv_results)
 ```
 
 The CV RMSE difference between OLS and LASSO shows how much regularization helps (or hurts) for each response. Small differences suggest both methods work similarly well, while larger differences indicate one method is clearly better at handling the bias-variance tradeoff for that particular response.
