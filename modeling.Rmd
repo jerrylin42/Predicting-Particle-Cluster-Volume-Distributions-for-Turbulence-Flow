@@ -44,6 +44,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(leaps)
 library(glmnet)
+library(mgcv)
 set.seed(325)
 ```
 
