@@ -33,13 +33,13 @@ With the need to fit four separate models, one for each metric of the cluster di
 
 Fit the full linear regression model with all two-way interaction effects, then perform best subset selection to select the best model using AIC as the selection metric. We use best subset selection over forward vs backward selection because we do not have a large number of variables to try out, so the fit is computationally not excessively expensive. We use AIC as the selection metric because model simplicity is not of utmost concern; there aren't many variables to start with, so the penalty that BIC induces might be too harsh. The hierarchy principle is imposed to ensure interpretability.
 
-Fit all variables and interactions on a lasso model, allowing lasso to select variables of interest by zeroing out unimportant terms. We were interested in lasso as lasso can often offer better predictive performance over OLS in cases where overfitting may be of concern (In our case, we do not seek to simply optimize interpretability/fit on the data at hand; we are also interested in future prediction). 
+Fit all variables and interactions on a lasso model, allowing lasso to select variables of interest by zeroing out unimportant terms. We were interested in lasso as lasso can often offer better predictive performance over OLS in cases where overfitting may be of concern (In our case, we do not seek to simply optimize interpretability/fit on the data at hand; we are also interested in future prediction).
 
-Compare the best subset, AIC-selected model, with the lasso model using ten-fold cross-validation. Then we select the one with the lower CV using RMSE as our evaluation metric. 
+Compare the best subset, AIC-selected model, with the lasso model using ten-fold cross-validation. Then we select the one with the lower CV using RMSE as our evaluation metric.
 
 ### Prediction and Uncertainty Quantification
 
-For each of the four separate models, we must make predictions using the model on the testing dataset. To quantify uncertainty in predictions, we obtain prediction intervals to understand and account for prediction errors and potential noise. Extracting 95% prediction intervals for OLS is straightforward using their built-in functions, but when lasso is selected as a model, we use a proxy to estimate the interval: we extract the prediction from lasso, and obtain the prediction interval by fitting the lasso-selected variables on OLS to obtain the intervals from OLS as an imperfect estimation. 
+For each of the four separate models, we must make predictions using the model on the testing dataset. To quantify uncertainty in predictions, we obtain prediction intervals to understand and account for prediction errors and potential noise. Extracting 95% prediction intervals for OLS is straightforward using their built-in functions, but when lasso is selected as a model, we use a proxy to estimate the interval: we extract the prediction from lasso, and obtain the prediction interval by fitting the lasso-selected variables on OLS to obtain the intervals from OLS as an imperfect estimation.
 
 ## Results
 
